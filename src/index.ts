@@ -13,10 +13,6 @@ import { assignTask, updateTaskStatus, findTaskByChannel } from './tasks.js';
 import { startTaskMonitor } from './taskMonitor.js';
 import { startDailySummary } from './dailySummary.js';
 import { handleTaskChannelMessage } from './messageHandler.js';
-import { startShift } from './shifts.js';
-import { endShift } from './shifts.js';
-import { handleShiftMessage } from './shifts.js';
-import { startShiftMonitor } from './shiftMonitor.js';
 
 const env = getEnv();
 
@@ -47,7 +43,6 @@ client.once(Events.ClientReady, async () => {
 
   startTaskMonitor(client);
   startDailySummary(client);
-  startShiftMonitor(client);
 
   console.log(`Bot ready as ${client.user?.tag}`);
 });
@@ -55,7 +50,6 @@ client.once(Events.ClientReady, async () => {
 // Handle messages in task channels (for image proof detection)
 client.on(Events.MessageCreate, async (message) => {
   await handleTaskChannelMessage(message);
-  await handleShiftMessage(client, message);
 });
 
 // Task templates for quick assignment
@@ -122,66 +116,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
       console.log(`Command received: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
       
-      if (interaction.commandName === 'startshift') {
-        // Check if command is used in the correct channel
-        if (env.SHIFT_CHANNEL_ID && interaction.channel?.id !== env.SHIFT_CHANNEL_ID) {
-          await interaction.reply({
-            content: `❌ This command can only be used in <#${env.SHIFT_CHANNEL_ID}>`,
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        try {
-          console.log(`Starting shift for user ${interaction.user.id}`);
-          const result = await startShift(client, interaction.user);
-          console.log(`Shift start result:`, result);
-          await interaction.editReply({
-            content: result.created
-              ? '✅ **Shift started and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the full shift instructions and checklist!'
-              : 'ℹ️ You already have an active shift. **CHECK YOUR DMs** - I re-sent the full instructions.',
-          });
-        } catch (error: any) {
-          console.error('Error starting shift:', error);
-          console.error('Error stack:', error.stack);
-          await interaction.editReply({
-            content: `Error: ${error.message || 'Failed to start shift'}`,
-          });
-        }
-        return;
-      }
-
-      if (interaction.commandName === 'endshift') {
-        // Check if command is used in the correct channel
-        if (env.SHIFT_CHANNEL_ID && interaction.channel?.id !== env.SHIFT_CHANNEL_ID) {
-          await interaction.reply({
-            content: `❌ This command can only be used in <#${env.SHIFT_CHANNEL_ID}>`,
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        try {
-          console.log(`Ending shift for user ${interaction.user.id}`);
-          const result = await endShift(client, interaction.user);
-          console.log(`Shift end result:`, result);
-          await interaction.editReply({
-            content: result.ended
-              ? '✅ **Shift ended and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the end-of-shift checklist!'
-              : 'ℹ️ No active shift found to end. Use `/startshift` when you begin.',
-          });
-        } catch (error: any) {
-          console.error('Error ending shift:', error);
-          console.error('Error stack:', error.stack);
-          await interaction.editReply({
-            content: `Error: ${error.message || 'Failed to end shift'}`,
-          });
-        }
-        return;
-      }
-
       if (interaction.commandName === 'task') {
         const sub = interaction.options.getSubcommand();
         

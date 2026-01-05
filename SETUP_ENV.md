@@ -42,13 +42,14 @@ Full path: `multipurpose-bot/bot/.env`
    STAFF_USER_IDS=user_id_1,user_id_2,user_id_3
    STAFF_ROLE_IDS=role_id_1,role_id_2  # optional
 
-   # Optional (shift compliance tuning)
-   CHATTER_USER_IDS=user_id_1,user_id_2  # optional (explicit list to enforce /startshift)
-   SHIFT_OPENING_REMINDER_MINUTES=30
-   SHIFT_ZERO_ACTIVITY_MINUTES=60
-   SHIFT_MISSING_END_HOURS=12
-   SHIFT_MISSING_START_COOLDOWN_MINUTES=720
-   SHIFT_REPEAT_OFFENDER_THRESHOLD=3
+  # Optional (legacy shift settings)
+  # NOTE: Shift commands are currently disabled in code, so these are unused unless you re-enable that feature.
+  CHATTER_USER_IDS=
+  SHIFT_OPENING_REMINDER_MINUTES=30
+  SHIFT_ZERO_ACTIVITY_MINUTES=60
+  SHIFT_MISSING_END_HOURS=12
+  SHIFT_MISSING_START_COOLDOWN_MINUTES=720
+  SHIFT_REPEAT_OFFENDER_THRESHOLD=3
    ```
 
 ## Verify .env File Location
