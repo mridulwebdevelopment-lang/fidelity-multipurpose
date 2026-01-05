@@ -35,9 +35,20 @@ Full path: `multipurpose-bot/bot/.env`
    # Discord Channels & Users
    TASKS_CATEGORY_ID=your_category_id_for_task_channels
    RED_ALERTS_CHANNEL_ID=your_red_alerts_channel_id
+   DAILY_SUMMARY_CHANNEL_ID=your_daily_summary_channel_id
    KASH_USER_ID=your_kash_discord_user_id
    RYAN_USER_ID=your_ryan_discord_user_id
+   ISAAC_USER_ID=your_isaac_discord_user_id
    STAFF_USER_IDS=user_id_1,user_id_2,user_id_3
+   STAFF_ROLE_IDS=role_id_1,role_id_2  # optional
+
+   # Optional (shift compliance tuning)
+   CHATTER_USER_IDS=user_id_1,user_id_2  # optional (explicit list to enforce /startshift)
+   SHIFT_OPENING_REMINDER_MINUTES=30
+   SHIFT_ZERO_ACTIVITY_MINUTES=60
+   SHIFT_MISSING_END_HOURS=12
+   SHIFT_MISSING_START_COOLDOWN_MINUTES=720
+   SHIFT_REPEAT_OFFENDER_THRESHOLD=3
    ```
 
 ## Verify .env File Location

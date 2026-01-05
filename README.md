@@ -11,6 +11,8 @@ A Discord bot for tracking assigned tasks, deadlines, and ownership with automat
 - **Per-User Channels**: Automatic channel creation for each user assigned a task
 - **DM Notifications**: Users receive DM notifications when tasks are assigned
 - **Web Dashboard**: View all tasks in the web app
+- **Chatter Shift Check-In**: `/startshift` DMs the shift playbook + logs start/end; `/endshift` closes the shift
+- **Shift Compliance Flags (Silent)**: Flags Isaac if chatter misses `/startshift` or `/endshift`, or has zero activity during a shift
 
 ## Setup
 
@@ -32,7 +34,22 @@ A Discord bot for tracking assigned tasks, deadlines, and ownership with automat
 
    TASKS_CATEGORY_ID=your_category_id_for_task_channels
    RED_ALERTS_CHANNEL_ID=your_red_alerts_channel_id
+   DAILY_SUMMARY_CHANNEL_ID=your_daily_summary_channel_id
+
+   KASH_USER_ID=your_kash_discord_user_id
+   RYAN_USER_ID=your_ryan_discord_user_id
+   ISAAC_USER_ID=your_isaac_discord_user_id
+
    STAFF_USER_IDS=user_id_1,user_id_2
+   STAFF_ROLE_IDS=role_id_1,role_id_2  # optional
+
+   # Optional (shift compliance tuning)
+   CHATTER_USER_IDS=user_id_1,user_id_2  # optional (explicit list to enforce /startshift)
+   SHIFT_OPENING_REMINDER_MINUTES=30
+   SHIFT_ZERO_ACTIVITY_MINUTES=60
+   SHIFT_MISSING_END_HOURS=12
+   SHIFT_MISSING_START_COOLDOWN_MINUTES=720
+   SHIFT_REPEAT_OFFENDER_THRESHOLD=3
    ```
 
 3. **Run database migration:**
@@ -57,6 +74,8 @@ A Discord bot for tracking assigned tasks, deadlines, and ownership with automat
 - `/task assign` - Assign a task to a user (staff only)
 - `/task update` - Update task status (in task channel)
 - `/task list` - List all tasks with optional filters
+- `/startshift` - Start shift (logs timestamp + DMs full playbook)
+- `/endshift` - End shift (logs timestamp + DMs end-of-shift checklist)
 
 ## How It Works
 

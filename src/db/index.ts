@@ -220,6 +220,234 @@ export const prisma = {
       return { id: data.where.id };
     },
   },
+  shiftProfile: {
+    findUnique: async (query: { where: { userId: string } }) => {
+      const { data, error } = await getSupabase()
+        .from('shift_profiles')
+        .select('*')
+        .eq('user_id', query.where.userId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      return {
+        userId: data.user_id,
+        firstSeenAt: data.first_seen_at,
+        lastStartshiftAt: data.last_startshift_at,
+        lastEndshiftAt: data.last_endshift_at,
+        lastMissingStartFlagAt: data.last_missing_start_flag_at,
+        missingStartCount: data.missing_start_count ?? 0,
+        missingEndCount: data.missing_end_count ?? 0,
+        zeroActivityCount: data.zero_activity_count ?? 0,
+        lastRepeatOffenderFlagAt: data.last_repeat_offender_flag_at ?? null,
+      };
+    },
+    upsert: async (query: { where: { userId: string }; create?: any; update?: any }) => {
+      const userId = query.where.userId;
+      const createData = query.create ?? {};
+      const updateData = query.update ?? {};
+
+      // IMPORTANT: Supabase upsert updates any provided columns.
+      // Only include fields we explicitly want to set, to avoid overwriting existing values with nulls.
+      const payload: any = { user_id: userId };
+
+      const lastStartshiftAt = updateData.lastStartshiftAt ?? createData.lastStartshiftAt;
+      if (lastStartshiftAt !== undefined) payload.last_startshift_at = lastStartshiftAt;
+
+      const lastEndshiftAt = updateData.lastEndshiftAt ?? createData.lastEndshiftAt;
+      if (lastEndshiftAt !== undefined) payload.last_endshift_at = lastEndshiftAt;
+
+      const lastMissingStartFlagAt =
+        updateData.lastMissingStartFlagAt ?? createData.lastMissingStartFlagAt;
+      if (lastMissingStartFlagAt !== undefined) payload.last_missing_start_flag_at = lastMissingStartFlagAt;
+
+      const missingStartCount = updateData.missingStartCount ?? createData.missingStartCount;
+      if (missingStartCount !== undefined) payload.missing_start_count = missingStartCount;
+
+      const missingEndCount = updateData.missingEndCount ?? createData.missingEndCount;
+      if (missingEndCount !== undefined) payload.missing_end_count = missingEndCount;
+
+      const zeroActivityCount = updateData.zeroActivityCount ?? createData.zeroActivityCount;
+      if (zeroActivityCount !== undefined) payload.zero_activity_count = zeroActivityCount;
+
+      const lastRepeatOffenderFlagAt =
+        updateData.lastRepeatOffenderFlagAt ?? createData.lastRepeatOffenderFlagAt;
+      if (lastRepeatOffenderFlagAt !== undefined) payload.last_repeat_offender_flag_at = lastRepeatOffenderFlagAt;
+
+      const { data, error } = await getSupabase()
+        .from('shift_profiles')
+        .upsert(payload, { onConflict: 'user_id' })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        userId: data.user_id,
+        firstSeenAt: data.first_seen_at,
+        lastStartshiftAt: data.last_startshift_at,
+        lastEndshiftAt: data.last_endshift_at,
+        lastMissingStartFlagAt: data.last_missing_start_flag_at,
+        missingStartCount: data.missing_start_count ?? 0,
+        missingEndCount: data.missing_end_count ?? 0,
+        zeroActivityCount: data.zero_activity_count ?? 0,
+        lastRepeatOffenderFlagAt: data.last_repeat_offender_flag_at ?? null,
+      };
+    },
+    update: async (query: { where: { userId: string }; data: any }) => {
+      const updates: any = {};
+      if (query.data.lastStartshiftAt !== undefined) updates.last_startshift_at = query.data.lastStartshiftAt;
+      if (query.data.lastEndshiftAt !== undefined) updates.last_endshift_at = query.data.lastEndshiftAt;
+      if (query.data.lastMissingStartFlagAt !== undefined)
+        updates.last_missing_start_flag_at = query.data.lastMissingStartFlagAt;
+      if (query.data.missingStartCount !== undefined) updates.missing_start_count = query.data.missingStartCount;
+      if (query.data.missingEndCount !== undefined) updates.missing_end_count = query.data.missingEndCount;
+      if (query.data.zeroActivityCount !== undefined) updates.zero_activity_count = query.data.zeroActivityCount;
+      if (query.data.lastRepeatOffenderFlagAt !== undefined)
+        updates.last_repeat_offender_flag_at = query.data.lastRepeatOffenderFlagAt;
+
+      const { error } = await getSupabase().from('shift_profiles').update(updates).eq('user_id', query.where.userId);
+      if (error) throw error;
+      return { userId: query.where.userId };
+    },
+  },
+  shift: {
+    create: async (query: { data: any }) => {
+      const now = new Date().toISOString();
+      const payload: any = {
+        user_id: query.data.userId,
+        start_time: query.data.startTime ?? now,
+        end_time: query.data.endTime ?? null,
+        opening_reminder_sent_at: query.data.openingReminderSentAt ?? null,
+        last_periodic_reminder_at: query.data.lastPeriodicReminderAt ?? null,
+        activity_count: query.data.activityCount ?? 0,
+        last_activity_at: query.data.lastActivityAt ?? null,
+        flagged_zero_activity_at: query.data.flaggedZeroActivityAt ?? null,
+        flagged_missing_end_at: query.data.flaggedMissingEndAt ?? null,
+        created_at: now,
+        updated_at: now,
+      };
+
+      const { data, error } = await getSupabase().from('shifts').insert(payload).select().single();
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        startTime: data.start_time,
+        endTime: data.end_time,
+        openingReminderSentAt: data.opening_reminder_sent_at,
+        lastPeriodicReminderAt: data.last_periodic_reminder_at,
+        activityCount: data.activity_count ?? 0,
+        lastActivityAt: data.last_activity_at,
+        flaggedZeroActivityAt: data.flagged_zero_activity_at,
+        flaggedMissingEndAt: data.flagged_missing_end_at,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+    findActiveByUserId: async (userId: string) => {
+      const { data, error } = await getSupabase()
+        .from('shifts')
+        .select('*')
+        .eq('user_id', userId)
+        .is('end_time', null)
+        .order('start_time', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      const row = data?.[0];
+      if (!row) return null;
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        startTime: row.start_time,
+        endTime: row.end_time,
+        openingReminderSentAt: row.opening_reminder_sent_at,
+        lastPeriodicReminderAt: row.last_periodic_reminder_at,
+        activityCount: row.activity_count ?? 0,
+        lastActivityAt: row.last_activity_at,
+        flaggedZeroActivityAt: row.flagged_zero_activity_at,
+        flaggedMissingEndAt: row.flagged_missing_end_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    },
+    findMany: async (query: { where?: any; orderBy?: any; take?: number }) => {
+      let supabaseQuery = getSupabase().from('shifts').select('*');
+
+      if (query.where?.endTimeIsNull === true) {
+        supabaseQuery = supabaseQuery.is('end_time', null);
+      }
+      if (query.where?.userId) {
+        supabaseQuery = supabaseQuery.eq('user_id', query.where.userId);
+      }
+      if (query.where?.startTimeLt) {
+        supabaseQuery = supabaseQuery.lt('start_time', query.where.startTimeLt);
+      }
+      if (query.where?.activityCountEq !== undefined) {
+        supabaseQuery = supabaseQuery.eq('activity_count', query.where.activityCountEq);
+      }
+      if (query.where?.openingReminderSentAtIsNull === true) {
+        supabaseQuery = supabaseQuery.is('opening_reminder_sent_at', null);
+      }
+      if (query.where?.flaggedZeroActivityAtIsNull === true) {
+        supabaseQuery = supabaseQuery.is('flagged_zero_activity_at', null);
+      }
+      if (query.where?.flaggedMissingEndAtIsNull === true) {
+        supabaseQuery = supabaseQuery.is('flagged_missing_end_at', null);
+      }
+
+      if (query.orderBy?.startTime === 'asc') {
+        supabaseQuery = supabaseQuery.order('start_time', { ascending: true });
+      } else if (query.orderBy?.startTime === 'desc') {
+        supabaseQuery = supabaseQuery.order('start_time', { ascending: false });
+      }
+
+      if (query.take) supabaseQuery = supabaseQuery.limit(query.take);
+
+      const { data, error } = await supabaseQuery;
+      if (error) throw error;
+
+      return (data ?? []).map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        startTime: row.start_time,
+        endTime: row.end_time,
+        openingReminderSentAt: row.opening_reminder_sent_at,
+        lastPeriodicReminderAt: row.last_periodic_reminder_at,
+        activityCount: row.activity_count ?? 0,
+        lastActivityAt: row.last_activity_at,
+        flaggedZeroActivityAt: row.flagged_zero_activity_at,
+        flaggedMissingEndAt: row.flagged_missing_end_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    },
+    update: async (query: { where: { id: string }; data: any }) => {
+      const updates: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (query.data.endTime !== undefined) updates.end_time = query.data.endTime;
+      if (query.data.openingReminderSentAt !== undefined)
+        updates.opening_reminder_sent_at = query.data.openingReminderSentAt;
+      if (query.data.lastPeriodicReminderAt !== undefined)
+        updates.last_periodic_reminder_at = query.data.lastPeriodicReminderAt;
+      if (query.data.activityCount !== undefined) updates.activity_count = query.data.activityCount;
+      if (query.data.lastActivityAt !== undefined) updates.last_activity_at = query.data.lastActivityAt;
+      if (query.data.flaggedZeroActivityAt !== undefined)
+        updates.flagged_zero_activity_at = query.data.flaggedZeroActivityAt;
+      if (query.data.flaggedMissingEndAt !== undefined)
+        updates.flagged_missing_end_at = query.data.flaggedMissingEndAt;
+
+      const { error } = await getSupabase().from('shifts').update(updates).eq('id', query.where.id);
+      if (error) throw error;
+      return { id: query.where.id };
+    },
+  },
 };
 
 // Test database connection on startup

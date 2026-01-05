@@ -13,6 +13,10 @@ import { assignTask, updateTaskStatus, findTaskByChannel } from './tasks.js';
 import { startTaskMonitor } from './taskMonitor.js';
 import { startDailySummary } from './dailySummary.js';
 import { handleTaskChannelMessage } from './messageHandler.js';
+import { startShift } from './shifts.js';
+import { endShift } from './shifts.js';
+import { handleShiftMessage } from './shifts.js';
+import { startShiftMonitor } from './shiftMonitor.js';
 
 const env = getEnv();
 
@@ -43,6 +47,7 @@ client.once(Events.ClientReady, async () => {
 
   startTaskMonitor(client);
   startDailySummary(client);
+  startShiftMonitor(client);
 
   console.log(`Bot ready as ${client.user?.tag}`);
 });
@@ -50,6 +55,7 @@ client.once(Events.ClientReady, async () => {
 // Handle messages in task channels (for image proof detection)
 client.on(Events.MessageCreate, async (message) => {
   await handleTaskChannelMessage(message);
+  await handleShiftMessage(client, message);
 });
 
 // Task templates for quick assignment
@@ -114,6 +120,42 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'startshift') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        try {
+          const result = await startShift(client, interaction.user);
+          await interaction.editReply({
+            content: result.created
+              ? '✅ Shift started and logged. I’ve sent you the full instructions in DMs.'
+              : 'ℹ️ You already have an active shift. I re-sent the full instructions in DMs.',
+          });
+        } catch (error: any) {
+          console.error('Error starting shift:', error);
+          await interaction.editReply({
+            content: `Error: ${error.message || 'Failed to start shift'}`,
+          });
+        }
+        return;
+      }
+
+      if (interaction.commandName === 'endshift') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        try {
+          const result = await endShift(client, interaction.user);
+          await interaction.editReply({
+            content: result.ended
+              ? '✅ Shift ended and logged. Check your DMs for the end-of-shift checklist.'
+              : 'ℹ️ No active shift found to end. Use `/startshift` when you begin.',
+          });
+        } catch (error: any) {
+          console.error('Error ending shift:', error);
+          await interaction.editReply({
+            content: `Error: ${error.message || 'Failed to end shift'}`,
+          });
+        }
+        return;
+      }
+
       if (interaction.commandName === 'task') {
         const sub = interaction.options.getSubcommand();
         

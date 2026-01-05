@@ -15,6 +15,16 @@ const schema = z.object({
   STAFF_ROLE_IDS: z.string().optional().default(''),
   KASH_USER_ID: z.string().min(1),
   RYAN_USER_ID: z.string().min(1),
+  ISAAC_USER_ID: z.string().min(1),
+
+  // Shift check-in flow (all optional with sane defaults)
+  CHATTER_USER_IDS: z.string().optional().default(''),
+  SHIFT_OPENING_REMINDER_MINUTES: z.coerce.number().int().positive().optional().default(30),
+  SHIFT_ZERO_ACTIVITY_MINUTES: z.coerce.number().int().positive().optional().default(60),
+  SHIFT_MISSING_END_HOURS: z.coerce.number().int().positive().optional().default(12),
+  SHIFT_MISSING_START_COOLDOWN_MINUTES: z.coerce.number().int().positive().optional().default(12 * 60),
+  SHIFT_REPEAT_OFFENDER_THRESHOLD: z.coerce.number().int().positive().optional().default(3),
+  SHIFT_PERIODIC_REMINDER_HOURS: z.coerce.number().int().positive().optional().default(2),
 });
 
 export type Env = z.infer<typeof schema>;
