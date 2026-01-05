@@ -45,21 +45,28 @@ export async function assignTask(
 
   // Send notification in channel with action buttons
   await channel.send({
-    content: `<@${assignedTo.id}>`,
+    content: `<@${assignedTo.id}> 📋 **New Task Assigned**`,
     embeds: [
       {
         title: `${priorityConfig.emoji} ${task.title}`,
-        description: task.description || '*No description provided*',
+        description: task.description 
+          ? `\n${task.description}\n` 
+          : '\n*No description provided*\n',
         color: priorityConfig.color,
+        thumbnail: {
+          url: ('displayAvatarURL' in assignedTo 
+            ? (assignedTo as GuildMember).displayAvatarURL({ size: 128 })
+            : (assignedTo as User).avatarURL({ size: 128 })) || undefined,
+        },
         fields: [
           {
-            name: '📊 Priority',
-            value: `**${priorityConfig.name}**`,
+            name: '📊 Priority Level',
+            value: `**${priorityConfig.emoji} ${priorityConfig.name}**`,
             inline: true,
           },
           {
             name: '📝 Status',
-            value: '**Pending**',
+            value: '**⚪ Pending**',
             inline: true,
           },
           {
@@ -71,14 +78,20 @@ export async function assignTask(
             ? [
                 {
                   name: '⏰ Deadline',
-                  value: `<t:${Math.floor(deadline.getTime() / 1000)}:F>`,
+                  value: `<t:${Math.floor(deadline.getTime() / 1000)}:F>\n<t:${Math.floor(deadline.getTime() / 1000)}:R>`,
                   inline: false,
                 },
               ]
-            : []),
+            : [
+                {
+                  name: '⏰ Deadline',
+                  value: '*No deadline set*',
+                  inline: false,
+                },
+              ]),
         ],
         footer: {
-          text: `Task ID: ${task.id.slice(0, 8)}`,
+          text: `Task ID: ${task.id.slice(0, 8)} • Created`,
           icon_url: assignedBy.displayAvatarURL({ size: 64 }) || undefined,
         },
         timestamp: new Date().toISOString(),
@@ -123,30 +136,56 @@ export async function assignTask(
     const priorityConfig = priorityConfigMap[task.priority as TaskPriority];
 
     await dmChannel.send({
-      content: `📋 **New Task Assigned to You**\n\nYou have been assigned a new task in <#${channel.id}>`,
+      content: `📋 **New Task Assigned to You**`,
       embeds: [
         {
           title: `${priorityConfig.emoji} ${task.title}`,
-          description: task.description || '*No description provided*',
+          description: task.description 
+            ? `\n${task.description}\n` 
+            : '\n*No description provided*\n',
           color: priorityConfig.color,
+          thumbnail: {
+            url: assignedBy.displayAvatarURL({ size: 128 }) || undefined,
+          },
           fields: [
             {
-              name: '📊 Priority',
-              value: `**${priorityConfig.name}**`,
+              name: '📊 Priority Level',
+              value: `**${priorityConfig.emoji} ${priorityConfig.name}**`,
+              inline: true,
+            },
+            {
+              name: '📝 Status',
+              value: '**⚪ Pending**',
+              inline: true,
+            },
+            {
+              name: '👤 Assigned By',
+              value: `<@${assignedBy.id}>`,
               inline: true,
             },
             ...(deadline
               ? [
                   {
                     name: '⏰ Deadline',
-                    value: `<t:${Math.floor(deadline.getTime() / 1000)}:F>`,
-                    inline: true,
+                    value: `<t:${Math.floor(deadline.getTime() / 1000)}:F>\n<t:${Math.floor(deadline.getTime() / 1000)}:R>`,
+                    inline: false,
                   },
                 ]
-              : []),
+              : [
+                  {
+                    name: '⏰ Deadline',
+                    value: '*No deadline set*',
+                    inline: false,
+                  },
+                ]),
+            {
+              name: '💬 Task Channel',
+              value: `<#${channel.id}>`,
+              inline: false,
+            },
           ],
           footer: {
-            text: `View in: <#${channel.id}>`,
+            text: `Task ID: ${task.id.slice(0, 8)} • View task channel to interact`,
           },
           timestamp: new Date().toISOString(),
         },
