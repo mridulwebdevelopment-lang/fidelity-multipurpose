@@ -1,6 +1,22 @@
-import type { Client, Message, User } from 'discord.js';
+import type { Client, Message, TextChannel, User } from 'discord.js';
 import { prisma } from './db/index.js';
 import { getEnv } from './env.js';
+
+const SHIFT_NOTIFICATION_CHANNEL_ID = '1289237454720860170';
+
+async function notifyShiftChannel(client: Client, userId: string, message: string) {
+  try {
+    const channel = await client.channels.fetch(SHIFT_NOTIFICATION_CHANNEL_ID);
+    if (channel && channel.isTextBased()) {
+      await (channel as TextChannel).send({
+        content: `<@${userId}> ${message}`,
+      });
+    }
+  } catch (error) {
+    console.error('Failed to send shift notification to channel:', error);
+    // Don't fail if channel notification fails
+  }
+}
 
 function getShiftPlaybookSteps(): string[] {
   return [
@@ -53,13 +69,42 @@ function getEndShiftBlock(): string {
   ].join('\n');
 }
 
-export async function sendPlaybookDM(user: User) {
+export async function sendPlaybookDM(client: Client, user: User) {
   const dm = await user.createDM();
   const steps = getShiftPlaybookSteps();
   
-  // Send each step as a separate message with a small delay between them
+  // Send each step as a separate embed message with a small delay between them
   for (let i = 0; i < steps.length; i++) {
-    await dm.send({ content: steps[i] });
+    const stepText = steps[i];
+    const isWelcome = i === 0;
+    
+    let title = 'Shift Playbook';
+    let description = stepText;
+    
+    if (isWelcome) {
+      title = '✅ Shift Started';
+      description = '**Do this now:**\n- Work the playbook below in order\n- Use `/endshift` or `!endshift` when you finish';
+      // Notify channel when shift starts
+      await notifyShiftChannel(client, user.id, '✅ Shift started - playbook sent to DMs');
+    } else {
+      // Extract title from step text (format: **1️⃣ Title**)
+      const titleMatch = stepText.match(/\*\*(\d+️⃣[^*]+)\*\*/);
+      if (titleMatch) {
+        title = titleMatch[1];
+        description = stepText.replace(/\*\*\d+️⃣[^*]+\*\*\n\n/, '');
+      }
+    }
+    
+    await dm.send({
+      embeds: [
+        {
+          title,
+          description,
+          color: isWelcome ? 0x22c55e : 0x5865f2,
+          timestamp: isWelcome ? new Date().toISOString() : undefined,
+        },
+      ],
+    });
     // Small delay between messages (500ms) so they don't arrive all at once
     if (i < steps.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -67,18 +112,56 @@ export async function sendPlaybookDM(user: User) {
   }
 }
 
-export async function sendOpeningReminderDM(user: User) {
+export async function sendOpeningReminderDM(client: Client, user: User) {
   const dm = await user.createDM();
-  await dm.send({ content: getOpeningReminderBlock() });
+  await dm.send({
+    embeds: [
+      {
+        title: '⏱️ 30-Minute Check',
+        description: 'Opening routine should be done.\n\n**Next:** Scan + prioritise quality convos (do not mass spam).',
+        color: 0xf59e0b,
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
+  await notifyShiftChannel(client, user.id, '⏱️ 30-minute opening reminder sent to DMs');
 }
 
-export async function sendPeriodicReminderDM(user: User) {
+export async function sendPeriodicReminderDM(client: Client, user: User) {
   const dm = await user.createDM();
   const reminders = getPeriodicReminderSteps();
   
-  // Send all reminder steps as separate messages
+  // Send all reminder steps as separate embed messages
   for (let i = 0; i < reminders.length; i++) {
-    await dm.send({ content: reminders[i] });
+    const reminderText = reminders[i];
+    const isFirst = i === 0;
+    
+    let title = '🔄 Shift Reminder';
+    let description = reminderText;
+    
+    if (!isFirst) {
+      // Extract title from reminder text
+      const titleMatch = reminderText.match(/\*\*([^*]+)\*\*/);
+      if (titleMatch) {
+        title = titleMatch[1];
+        description = reminderText.replace(/\*\*[^*]+\*\*\n\n/, '');
+      }
+    } else {
+      description = 'Keep going! Remember the key playbook points:';
+      // Notify channel when periodic reminder is sent
+      await notifyShiftChannel(client, user.id, '🔄 Periodic shift reminder sent to DMs');
+    }
+    
+    await dm.send({
+      embeds: [
+        {
+          title,
+          description,
+          color: 0x5865f2,
+          timestamp: i === 0 ? new Date().toISOString() : undefined,
+        },
+      ],
+    });
     // Small delay between messages
     if (i < reminders.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -86,9 +169,19 @@ export async function sendPeriodicReminderDM(user: User) {
   }
 }
 
-export async function sendEndShiftDM(user: User) {
+export async function sendEndShiftDM(client: Client, user: User) {
   const dm = await user.createDM();
-  await dm.send({ content: getEndShiftBlock() });
+  await dm.send({
+    embeds: [
+      {
+        title: '✅ End-of-Shift Checklist',
+        description: '**Before shift ends:**\n- Close active convos politely\n- Leave soft hooks for next shift\n- Do **NOT** hard sell last 10 minutes\n\nShift logged. Good work.',
+        color: 0x22c55e,
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
+  await notifyShiftChannel(client, user.id, '✅ Shift ended - end-of-shift checklist sent to DMs');
 }
 
 export async function notifyIsaac(client: Client, message: string) {
@@ -122,7 +215,7 @@ export async function startShift(client: Client, user: User) {
     if (active) {
       // Re-send playbook without creating a second active shift
       try {
-        await sendPlaybookDM(user);
+        await sendPlaybookDM(client, user);
       } catch (dmError: any) {
         console.error('Error sending playbook DM:', dmError);
         // Don't fail the command if DM fails, just log it
@@ -148,7 +241,7 @@ export async function startShift(client: Client, user: User) {
 
     // Send playbook DM
     try {
-      await sendPlaybookDM(user);
+      await sendPlaybookDM(client, user);
     } catch (dmError: any) {
       console.error('Error sending playbook DM:', dmError);
       // Don't fail the command if DM fails, just log it
@@ -193,7 +286,7 @@ export async function endShift(client: Client, user: User) {
     }
 
     try {
-      await sendEndShiftDM(user);
+      await sendEndShiftDM(client, user);
     } catch (dmError: any) {
       console.error('Error sending end shift DM:', dmError);
       // Don't fail the command if DM fails, just log it
@@ -231,12 +324,12 @@ export async function handleShiftMessage(client: Client, message: Message) {
       content: `<@${message.author.id}>`,
       embeds: [
         {
-          title: result.created ? 'Shift started' : 'Shift already active',
+          title: result.created ? 'Shift started' : 'Shift already running',
           description: result.created
             ? '✅ Shift started and logged.\n📬 Check your DMs for the shift playbook.'
-            : 'ℹ️ You already have an active shift. I re-sent the playbook to your DMs.',
+            : '⚠️ **Your shift has already started and is currently running.**\n\nPlease end your current shift first using `/endshift` or `!endshift` before starting a new one.',
           color: result.created ? 0x22c55e : 0xf59e0b,
-          footer: { text: 'Use /endshift or !endshift when you finish.' },
+          footer: { text: result.created ? 'Use /endshift or !endshift when you finish.' : 'End your current shift to start a new one.' },
           timestamp: new Date().toISOString(),
         },
       ],

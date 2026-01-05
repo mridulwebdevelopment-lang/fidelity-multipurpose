@@ -42,7 +42,7 @@ async function checkShifts(client: Client) {
     if (!shift.openingReminderSentAt && shift.startTime < openingReminderThreshold) {
       try {
         const user = await client.users.fetch(shift.userId);
-        await sendOpeningReminderDM(user);
+        await sendOpeningReminderDM(client, user);
         await prisma.shift.update({
           where: { id: shift.id },
           data: { openingReminderSentAt: now.toISOString() },
@@ -59,7 +59,7 @@ async function checkShifts(client: Client) {
     if (needsPeriodicReminder) {
       try {
         const user = await client.users.fetch(shift.userId);
-        await sendPeriodicReminderDM(user);
+        await sendPeriodicReminderDM(client, user);
         await prisma.shift.update({
           where: { id: shift.id },
           data: { lastPeriodicReminderAt: now.toISOString() },

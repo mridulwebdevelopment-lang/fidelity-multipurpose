@@ -140,12 +140,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           await interaction.editReply({
             embeds: [
               {
-                title: result.created ? 'Shift started' : 'Shift already active',
+                title: result.created ? 'Shift started' : 'Shift already running',
                 description: result.created
                   ? '✅ Shift started and logged.\n📬 Check your DMs for the full shift instructions and checklist.'
-                  : 'ℹ️ You already have an active shift. I re-sent the full instructions to your DMs.',
+                  : '⚠️ **Your shift has already started and is currently running.**\n\nPlease end your current shift first using `/endshift` or `!endshift` before starting a new one.',
                 color: result.created ? 0x22c55e : 0xf59e0b,
-                footer: { text: 'Use /endshift or !endshift when you finish.' },
+                footer: { text: result.created ? 'Use /endshift or !endshift when you finish.' : 'End your current shift to start a new one.' },
                 timestamp: new Date().toISOString(),
               },
             ],
