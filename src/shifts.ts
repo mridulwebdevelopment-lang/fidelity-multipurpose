@@ -27,7 +27,7 @@ function getOpeningReminderBlock(): string {
     '',
     'Opening routine should be done.',
     '',
-    '**Next:** Scan + prioritise quality convos (don't mass spam).',
+    '**Next:** Scan + prioritise quality convos (do not mass spam).',
   ].join('\n');
 }
 
