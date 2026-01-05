@@ -214,6 +214,54 @@ export async function handleShiftMessage(client: Client, message: Message) {
 
   // Only track activity in guild text channels (not DMs)
   if (!message.guild) return;
+  const channel = message.channel;
+  if (!('send' in channel)) return;
+  const sendableChannel = channel as typeof channel & { send: (...args: any[]) => any };
+
+  const content = message.content.trim().toLowerCase();
+  const inShiftChannel = message.channel.id === env.SHIFT_CHANNEL_ID;
+  const isStartTextCommand =
+    inShiftChannel && (content === '!startshift' || content === '/startshift' || content === 'startshift');
+  const isEndTextCommand =
+    inShiftChannel && (content === '!endshift' || content === '/endshift' || content === 'endshift');
+
+  if (isStartTextCommand) {
+    const result = await startShift(client, message.author);
+    await sendableChannel.send({
+      content: `<@${message.author.id}>`,
+      embeds: [
+        {
+          title: result.created ? 'Shift started' : 'Shift already active',
+          description: result.created
+            ? '✅ Shift started and logged.\n📬 Check your DMs for the shift playbook.'
+            : 'ℹ️ You already have an active shift. I re-sent the playbook to your DMs.',
+          color: result.created ? 0x22c55e : 0xf59e0b,
+          footer: { text: 'Use /endshift or !endshift when you finish.' },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+    return;
+  }
+
+  if (isEndTextCommand) {
+    const result = await endShift(client, message.author);
+    await sendableChannel.send({
+      content: `<@${message.author.id}>`,
+      embeds: [
+        {
+          title: result.ended ? 'Shift ended' : 'No active shift',
+          description: result.ended
+            ? '✅ Shift ended and logged.\n📬 Check your DMs for the end-of-shift checklist.'
+            : 'ℹ️ No active shift found to end. Use /startshift or !startshift when you begin.',
+          color: result.ended ? 0x22c55e : 0xf59e0b,
+          footer: { text: 'You can start a new shift once the previous one is ended.' },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+    return;
+  }
 
   const now = new Date();
   const nowIso = now.toISOString();

@@ -138,15 +138,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const result = await startShift(client, interaction.user);
           console.log(`Shift start result:`, result);
           await interaction.editReply({
-            content: result.created
-              ? '✅ **Shift started and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the full shift instructions and checklist!'
-              : 'ℹ️ You already have an active shift. **CHECK YOUR DMs** - I re-sent the full instructions.',
+            embeds: [
+              {
+                title: result.created ? 'Shift started' : 'Shift already active',
+                description: result.created
+                  ? '✅ Shift started and logged.\n📬 Check your DMs for the full shift instructions and checklist.'
+                  : 'ℹ️ You already have an active shift. I re-sent the full instructions to your DMs.',
+                color: result.created ? 0x22c55e : 0xf59e0b,
+                footer: { text: 'Use /endshift or !endshift when you finish.' },
+                timestamp: new Date().toISOString(),
+              },
+            ],
           });
         } catch (error: any) {
           console.error('Error starting shift:', error);
           console.error('Error stack:', error.stack);
           await interaction.editReply({
-            content: `Error: ${error.message || 'Failed to start shift'}`,
+            embeds: [
+              {
+                title: '❌ Error',
+                description: error.message || 'Failed to start shift',
+                color: 0xef4444,
+                timestamp: new Date().toISOString(),
+              },
+            ],
           });
         }
         return;
@@ -168,15 +183,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const result = await endShift(client, interaction.user);
           console.log(`Shift end result:`, result);
           await interaction.editReply({
-            content: result.ended
-              ? '✅ **Shift ended and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the end-of-shift checklist!'
-              : 'ℹ️ No active shift found to end. Use `/startshift` when you begin.',
+            embeds: [
+              {
+                title: result.ended ? 'Shift ended' : 'No active shift',
+                description: result.ended
+                  ? '✅ Shift ended and logged.\n📬 Check your DMs for the end-of-shift checklist.'
+                  : 'ℹ️ No active shift found to end. Use /startshift or !startshift when you begin.',
+                color: result.ended ? 0x22c55e : 0xf59e0b,
+                footer: { text: 'You can start a new shift once the previous one is ended.' },
+                timestamp: new Date().toISOString(),
+              },
+            ],
           });
         } catch (error: any) {
           console.error('Error ending shift:', error);
           console.error('Error stack:', error.stack);
           await interaction.editReply({
-            content: `Error: ${error.message || 'Failed to end shift'}`,
+            embeds: [
+              {
+                title: '❌ Error',
+                description: error.message || 'Failed to end shift',
+                color: 0xef4444,
+                timestamp: new Date().toISOString(),
+              },
+            ],
           });
         }
         return;
