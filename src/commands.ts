@@ -118,11 +118,13 @@ export const taskAssignCommand = new SlashCommandBuilder()
 
 export const startShiftCommand = new SlashCommandBuilder()
   .setName('startshift')
-  .setDescription('Start your shift (logs timestamp + DMs the full shift playbook)');
+  .setDescription('Start your shift (logs timestamp + DMs the full shift playbook)')
+  .setDMPermission(false); // Only works in servers, not DMs
 
 export const endShiftCommand = new SlashCommandBuilder()
   .setName('endshift')
-  .setDescription('End your shift (logs timestamp)');
+  .setDescription('End your shift (logs timestamp)')
+  .setDMPermission(false); // Only works in servers, not DMs
 
 export const ALL_COMMANDS = [taskAssignCommand, startShiftCommand, endShiftCommand].map((c) => c.toJSON());
 

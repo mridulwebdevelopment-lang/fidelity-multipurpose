@@ -103,57 +103,107 @@ export async function notifyIsaac(client: Client, message: string) {
 }
 
 export async function startShift(client: Client, user: User) {
-  const active = await prisma.shift.findActiveByUserId(user.id);
-  const now = new Date().toISOString();
+  try {
+    const active = await prisma.shift.findActiveByUserId(user.id);
+    const now = new Date().toISOString();
 
-  // Ensure profile exists
-  await prisma.shiftProfile.upsert({
-    where: { userId: user.id },
-    create: { userId: user.id, firstSeenAt: now },
-    update: { lastStartshiftAt: now },
-  });
+    // Ensure profile exists first (required for foreign key constraint)
+    try {
+      await prisma.shiftProfile.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, firstSeenAt: now },
+        update: { lastStartshiftAt: now },
+      });
+    } catch (profileError: any) {
+      console.error('Error upserting shift profile:', profileError);
+      throw new Error(`Failed to create/update profile: ${profileError.message || 'Unknown error'}`);
+    }
 
-  if (active) {
-    // Re-send playbook without creating a second active shift
-    await sendPlaybookDM(user);
-    return { created: false, shift: active };
+    if (active) {
+      // Re-send playbook without creating a second active shift
+      try {
+        await sendPlaybookDM(user);
+      } catch (dmError: any) {
+        console.error('Error sending playbook DM:', dmError);
+        // Don't fail the command if DM fails, just log it
+      }
+      return { created: false, shift: active };
+    }
+
+    // Create new shift
+    let shift;
+    try {
+      shift = await prisma.shift.create({
+        data: {
+          userId: user.id,
+          startTime: now,
+          activityCount: 0,
+          lastActivityAt: null,
+        },
+      });
+    } catch (shiftError: any) {
+      console.error('Error creating shift:', shiftError);
+      throw new Error(`Failed to create shift: ${shiftError.message || 'Unknown error'}`);
+    }
+
+    // Send playbook DM
+    try {
+      await sendPlaybookDM(user);
+    } catch (dmError: any) {
+      console.error('Error sending playbook DM:', dmError);
+      // Don't fail the command if DM fails, just log it
+    }
+
+    return { created: true, shift };
+  } catch (error: any) {
+    console.error('Error in startShift:', error);
+    throw error;
   }
-
-  const shift = await prisma.shift.create({
-    data: {
-      userId: user.id,
-      startTime: now,
-      activityCount: 0,
-      lastActivityAt: null,
-    },
-  });
-
-  await sendPlaybookDM(user);
-  return { created: true, shift };
 }
 
 export async function endShift(client: Client, user: User) {
-  const active = await prisma.shift.findActiveByUserId(user.id);
-  const now = new Date().toISOString();
+  try {
+    const active = await prisma.shift.findActiveByUserId(user.id);
+    const now = new Date().toISOString();
 
-  // Ensure profile exists
-  await prisma.shiftProfile.upsert({
-    where: { userId: user.id },
-    create: { userId: user.id, firstSeenAt: now },
-    update: { lastEndshiftAt: now },
-  });
+    // Ensure profile exists
+    try {
+      await prisma.shiftProfile.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, firstSeenAt: now },
+        update: { lastEndshiftAt: now },
+      });
+    } catch (profileError: any) {
+      console.error('Error upserting shift profile:', profileError);
+      // Don't fail if profile upsert fails, just log it
+    }
 
-  if (!active) {
-    return { ended: false, shift: null };
+    if (!active) {
+      return { ended: false, shift: null };
+    }
+
+    try {
+      await prisma.shift.update({
+        where: { id: active.id },
+        data: { endTime: now },
+      });
+    } catch (updateError: any) {
+      console.error('Error updating shift:', updateError);
+      throw new Error(`Failed to end shift: ${updateError.message || 'Unknown error'}`);
+    }
+
+    try {
+      await sendEndShiftDM(user);
+    } catch (dmError: any) {
+      console.error('Error sending end shift DM:', dmError);
+      // Don't fail the command if DM fails, just log it
+    }
+
+    return { ended: true, shift: { ...active, endTime: now } };
+  } catch (error: any) {
+    console.error('Error in endShift:', error);
+    throw error;
   }
-
-  await prisma.shift.update({
-    where: { id: active.id },
-    data: { endTime: now },
-  });
-
-  await sendEndShiftDM(user);
-  return { ended: true, shift: { ...active, endTime: now } };
 }
 
 export async function handleShiftMessage(client: Client, message: Message) {

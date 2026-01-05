@@ -120,17 +120,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.isChatInputCommand()) {
+      console.log(`Command received: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
+      
       if (interaction.commandName === 'startshift') {
+        // Check if command is used in the correct channel
+        if (env.SHIFT_CHANNEL_ID && interaction.channel?.id !== env.SHIFT_CHANNEL_ID) {
+          await interaction.reply({
+            content: `❌ This command can only be used in <#${env.SHIFT_CHANNEL_ID}>`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
+          console.log(`Starting shift for user ${interaction.user.id}`);
           const result = await startShift(client, interaction.user);
+          console.log(`Shift start result:`, result);
           await interaction.editReply({
             content: result.created
-              ? '✅ Shift started and logged. I’ve sent you the full instructions in DMs.'
-              : 'ℹ️ You already have an active shift. I re-sent the full instructions in DMs.',
+              ? '✅ **Shift started and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the full shift instructions and checklist!'
+              : 'ℹ️ You already have an active shift. **CHECK YOUR DMs** - I re-sent the full instructions.',
           });
         } catch (error: any) {
           console.error('Error starting shift:', error);
+          console.error('Error stack:', error.stack);
           await interaction.editReply({
             content: `Error: ${error.message || 'Failed to start shift'}`,
           });
@@ -139,16 +153,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (interaction.commandName === 'endshift') {
+        // Check if command is used in the correct channel
+        if (env.SHIFT_CHANNEL_ID && interaction.channel?.id !== env.SHIFT_CHANNEL_ID) {
+          await interaction.reply({
+            content: `❌ This command can only be used in <#${env.SHIFT_CHANNEL_ID}>`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
+          console.log(`Ending shift for user ${interaction.user.id}`);
           const result = await endShift(client, interaction.user);
+          console.log(`Shift end result:`, result);
           await interaction.editReply({
             content: result.ended
-              ? '✅ Shift ended and logged. Check your DMs for the end-of-shift checklist.'
+              ? '✅ **Shift ended and logged!**\n\n📬 **CHECK YOUR DMs** - I have sent you the end-of-shift checklist!'
               : 'ℹ️ No active shift found to end. Use `/startshift` when you begin.',
           });
         } catch (error: any) {
           console.error('Error ending shift:', error);
+          console.error('Error stack:', error.stack);
           await interaction.editReply({
             content: `Error: ${error.message || 'Failed to end shift'}`,
           });

@@ -19,6 +19,7 @@ const schema = z.object({
 
   // Shift check-in flow (all optional with sane defaults)
   CHATTER_USER_IDS: z.string().optional().default(''),
+  SHIFT_CHANNEL_ID: z.string().optional().default('1457741396218745028'), // Channel where /startshift and /endshift work
   SHIFT_OPENING_REMINDER_MINUTES: z.coerce.number().int().positive().optional().default(30),
   SHIFT_ZERO_ACTIVITY_MINUTES: z.coerce.number().int().positive().optional().default(60),
   SHIFT_MISSING_END_HOURS: z.coerce.number().int().positive().optional().default(12),
