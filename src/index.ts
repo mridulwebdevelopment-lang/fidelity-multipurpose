@@ -314,7 +314,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
             let tasks = await prisma.task.findMany({
               orderBy: { createdAt: 'desc' },
-              take: 20,
+              take: 50,
             });
 
             // Filter by user if provided
@@ -331,36 +331,162 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
             if (tasks.length === 0) {
               await interaction.editReply({
-                content: 'No tasks found.',
+                embeds: [
+                  {
+                    title: '📋 Task List',
+                    description: 'No tasks found matching your criteria.',
+                    color: 0x5865f2,
+                  },
+                ],
               });
               return;
             }
 
-            const taskList = tasks.map((task, idx) => {
-              const statusEmoji = {
-                [TaskStatus.pending]: '⚪',
-                [TaskStatus.in_progress]: '🟡',
-                [TaskStatus.completed]: '✅',
-                [TaskStatus.cancelled]: '❌',
-              }[task.status];
+            // Sort tasks: Priority (urgent > high > medium > low), then deadline (soonest first), then created date (newest first)
+            const priorityOrder: Record<string, number> = {
+              urgent: 4,
+              high: 3,
+              medium: 2,
+              low: 1,
+            };
 
-              const priorityEmoji = {
-                low: '🟢',
-                medium: '🟡',
-                high: '🟠',
-                urgent: '🔴',
-              }[task.priority];
+            tasks.sort((a, b) => {
+              // First sort by priority
+              const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+              if (priorityDiff !== 0) return priorityDiff;
 
-              return `${idx + 1}. ${statusEmoji} ${priorityEmoji} **${task.title}** — <@${task.assignedToUserId}>`;
-            }).join('\n');
+              // Then by deadline (tasks with deadlines come first, then by date)
+              if (a.deadline && b.deadline) {
+                return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+              }
+              if (a.deadline) return -1;
+              if (b.deadline) return 1;
+
+              // Finally by creation date (newest first)
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+
+            // Priority configuration
+            const priorityConfigMap = {
+              low: { emoji: '🟢', color: 0x22c55e, name: 'Low' },
+              medium: { emoji: '🟡', color: 0xeab308, name: 'Medium' },
+              high: { emoji: '🟠', color: 0xf97316, name: 'High' },
+              urgent: { emoji: '🔴', color: 0xef4444, name: 'Urgent' },
+            };
+
+            const statusConfigMap = {
+              [TaskStatus.pending]: { emoji: '⚪', name: 'Pending' },
+              [TaskStatus.in_progress]: { emoji: '🟡', name: 'In Progress' },
+              [TaskStatus.completed]: { emoji: '✅', name: 'Completed' },
+              [TaskStatus.cancelled]: { emoji: '❌', name: 'Cancelled' },
+            };
+
+            // Group tasks by status for better organization
+            const tasksByStatus = new Map<string, typeof tasks>();
+            for (const task of tasks) {
+              const statusKey = task.status;
+              if (!tasksByStatus.has(statusKey)) {
+                tasksByStatus.set(statusKey, []);
+              }
+              tasksByStatus.get(statusKey)!.push(task);
+            }
+
+            // Create embeds with fields (Discord allows up to 25 fields per embed, 6000 chars total)
+            const embeds: any[] = [];
+            let currentEmbed: any = {
+              title: '📋 Task List',
+              description: `**Total Tasks:** ${tasks.length}\n*Sorted by priority, deadline, and creation date*`,
+              color: 0x5865f2,
+              fields: [],
+              timestamp: new Date().toISOString(),
+            };
+
+            let fieldCount = 0;
+            const maxFieldsPerEmbed = 24; // Leave room for footer
+
+            for (const [status, statusTasks] of Array.from(tasksByStatus.entries()).sort((a, b) => {
+              // Order: in_progress, pending, completed, cancelled
+              const order: Record<string, number> = {
+                [TaskStatus.in_progress]: 1,
+                [TaskStatus.pending]: 2,
+                [TaskStatus.completed]: 3,
+                [TaskStatus.cancelled]: 4,
+              };
+              return (order[a[0]] || 99) - (order[b[0]] || 99);
+            })) {
+              const statusConfig = statusConfigMap[status as TaskStatus];
+              
+              for (const task of statusTasks) {
+                if (fieldCount >= maxFieldsPerEmbed) {
+                  // Start a new embed
+                  embeds.push(currentEmbed);
+                  currentEmbed = {
+                    title: '📋 Task List (Continued)',
+                    color: 0x5865f2,
+                    fields: [],
+                    timestamp: new Date().toISOString(),
+                  };
+                  fieldCount = 0;
+                }
+
+                const priorityConfig = priorityConfigMap[task.priority as keyof typeof priorityConfigMap];
+                
+                let taskValue = `${priorityConfig.emoji} **${priorityConfig.name}** Priority\n`;
+                taskValue += `👤 Assigned to: <@${task.assignedToUserId}>\n`;
+                if (task.description) {
+                  const desc = task.description.length > 150 
+                    ? task.description.substring(0, 147) + '...' 
+                    : task.description;
+                  taskValue += `📝 ${desc}\n`;
+                }
+                if (task.deadline) {
+                  const deadlineDate = new Date(task.deadline);
+                  const now = new Date();
+                  const isOverdue = deadlineDate < now;
+                  const deadlineTimestamp = Math.floor(deadlineDate.getTime() / 1000);
+                  taskValue += `⏰ Deadline: <t:${deadlineTimestamp}:F>${isOverdue ? ' 🔴 **OVERDUE**' : ''}\n`;
+                }
+                taskValue += `🆔 ID: \`${task.id.slice(0, 8)}\``;
+
+                currentEmbed.fields.push({
+                  name: `${statusConfig.emoji} ${task.title}`,
+                  value: taskValue,
+                  inline: false,
+                });
+
+                fieldCount++;
+              }
+            }
+
+            // Add the last embed if it has fields
+            if (currentEmbed.fields.length > 0) {
+              embeds.push(currentEmbed);
+            }
+
+            // Add footer to last embed
+            if (embeds.length > 0) {
+              embeds[embeds.length - 1].footer = {
+                text: userOption 
+                  ? `Tasks for ${userOption.username}` 
+                  : statusOption 
+                    ? `Tasks with status: ${statusConfigMap[statusOption as TaskStatus]?.name || statusOption}`
+                    : 'All active tasks',
+              };
+            }
 
             await interaction.editReply({
-              content: `**Tasks** (${tasks.length}):\n\n${taskList}`,
+              embeds: embeds,
             });
           } catch (error: any) {
             console.error('Error listing tasks:', error);
             await interaction.editReply({
-              content: `Error: ${error.message || 'Failed to list tasks'}`,
+              embeds: [
+                {
+                  title: '❌ Error',
+                  description: `Failed to list tasks: ${error.message || 'Unknown error'}`,
+                  color: 0xff0000,
+                },
+              ],
             });
           }
           return;

@@ -3,15 +3,101 @@ import { prisma, TaskStatus } from './db/index.js';
 import { getEnv, getStaffUserIds } from './env.js';
 
 export function startDailySummary(client: Client) {
-  // Calculate time until next 9 AM
-  const now = new Date();
-  const next9AM = new Date(now);
-  next9AM.setHours(9, 0, 0, 0);
-  if (next9AM <= now) {
-    next9AM.setDate(next9AM.getDate() + 1);
-  }
+  // Calculate time until next midnight (12 AM) UK time
+  // UK timezone is Europe/London (GMT/BST)
+  const calculateNextMidnightUK = (): Date => {
+    const now = new Date();
+    
+    // Get current time in UK timezone
+    const ukNowStr = now.toLocaleString('en-GB', { 
+      timeZone: 'Europe/London',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    const [datePart, timePart] = ukNowStr.split(', ');
+    const [day, month, year] = datePart.split('/').map(Number);
+    const [hour] = timePart.split(':').map(Number);
+    
+    // Target date for next midnight (tomorrow if current hour >= 0)
+    let targetDay = day;
+    let targetMonth = month;
+    let targetYear = year;
+    
+    if (hour >= 0) {
+      targetDay++;
+      // Handle month/year overflow
+      const daysInMonth = new Date(year, month, 0).getDate();
+      if (targetDay > daysInMonth) {
+        targetDay = 1;
+        targetMonth++;
+        if (targetMonth > 12) {
+          targetMonth = 1;
+          targetYear++;
+        }
+      }
+    }
+    
+    // Find UTC time that corresponds to midnight UK on target date
+    // UK is either UTC+0 (GMT) or UTC+1 (BST), so test times around midnight UTC
+    // Start testing from 23:00 UTC the previous day to 01:00 UTC on target day
+    let testStartDay = targetDay - 1;
+    let testStartMonth = targetMonth - 1;
+    let testStartYear = targetYear;
+    
+    if (testStartDay < 1) {
+      testStartMonth--;
+      if (testStartMonth < 1) {
+        testStartMonth = 12;
+        testStartYear--;
+      }
+      testStartDay = new Date(testStartYear, testStartMonth, 0).getDate();
+    }
+    
+    const testStart = new Date(Date.UTC(testStartYear, testStartMonth - 1, testStartDay, 23, 0, 0, 0));
+    
+    // Test 4 hours worth (covers UTC-1 to UTC+2, more than enough)
+    for (let offset = 0; offset < 4; offset++) {
+      const testUTC = new Date(testStart);
+      testUTC.setUTCHours(testUTC.getUTCHours() + offset);
+      
+      const testUKStr = testUTC.toLocaleString('en-GB', { 
+        timeZone: 'Europe/London',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      
+      const [testDatePart, testTimePart] = testUKStr.split(', ');
+      const [testDay, testMonth, testYear] = testDatePart.split('/').map(Number);
+      const [testHour] = testTimePart.split(':').map(Number);
+      
+      // Check if this UTC time is midnight UK on the target date
+      if (testHour === 0 && testDay === targetDay && testMonth === targetMonth && testYear === targetYear) {
+        if (testUTC > now) {
+          return testUTC;
+        }
+      }
+    }
+    
+    // Fallback: schedule for 24 hours from now (shouldn't reach here)
+    const fallback = new Date(now);
+    fallback.setTime(now.getTime() + 24 * 60 * 60 * 1000);
+    return fallback;
+  };
 
-  const msUntil9AM = next9AM.getTime() - now.getTime();
+  const nextMidnight = calculateNextMidnightUK();
+  const msUntilMidnight = nextMidnight.getTime() - new Date().getTime();
+
+  console.log(`📅 Daily summary scheduled for: ${nextMidnight.toISOString()}`);
+  console.log(`   (${Math.round(msUntilMidnight / 1000 / 60)} minutes from now)`);
 
   // Schedule first run
   setTimeout(() => {
@@ -20,7 +106,7 @@ export function startDailySummary(client: Client) {
     setInterval(() => {
       sendDailySummary(client);
     }, 24 * 60 * 60 * 1000);
-  }, msUntil9AM);
+  }, msUntilMidnight);
 }
 
 async function sendDailySummary(client: Client) {
