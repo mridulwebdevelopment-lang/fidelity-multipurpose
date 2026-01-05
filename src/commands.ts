@@ -116,7 +116,17 @@ export const taskAssignCommand = new SlashCommandBuilder()
       ),
   );
 
-export const ALL_COMMANDS = [taskAssignCommand].map((c) => c.toJSON());
+export const startShiftCommand = new SlashCommandBuilder()
+  .setName('startshift')
+  .setDescription('Start your shift (logs timestamp + DMs the full shift playbook)')
+  .setDMPermission(false); // Only works in servers, not DMs
+
+export const endShiftCommand = new SlashCommandBuilder()
+  .setName('endshift')
+  .setDescription('End your shift (logs timestamp)')
+  .setDMPermission(false); // Only works in servers, not DMs
+
+export const ALL_COMMANDS = [taskAssignCommand, startShiftCommand, endShiftCommand].map((c) => c.toJSON());
 
 export function isChatInput(i: any): i is ChatInputCommandInteraction {
   return Boolean(i && i.isChatInputCommand?.());
