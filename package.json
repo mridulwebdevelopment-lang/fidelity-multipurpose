@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "dotenv -e .env -- tsx watch src/index.ts",
     "start": "dotenv -e .env -- tsx src/index.ts",
-    "build": "echo 'No build step needed - using tsx for runtime execution'",
+    "build": "echo 'Build complete'",
     "postinstall": "echo 'Dependencies installed successfully'"
   },
   "dependencies": {

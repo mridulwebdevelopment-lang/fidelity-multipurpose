@@ -10,3 +10,4 @@ ALTER TABLE shifts ADD COLUMN IF NOT EXISTS last_periodic_reminder_at TIMESTAMPT
 -- The bot will send periodic reminders every 2 hours (configurable) during active shifts
 -- to repeat key playbook instructions
 
+
