@@ -41,9 +41,16 @@ export function getEnv(): Env {
 }
 
 export function getStaffUserIds(env: Env): string[] {
-  return env.STAFF_USER_IDS.split(',')
+  const staffIds = env.STAFF_USER_IDS.split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  
+  // Always include KASH_USER_ID in staff list
+  if (env.KASH_USER_ID && !staffIds.includes(env.KASH_USER_ID)) {
+    staffIds.push(env.KASH_USER_ID);
+  }
+  
+  return staffIds;
 }
 
 export function getStaffRoleIds(env: Env): string[] {
