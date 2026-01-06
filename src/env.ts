@@ -45,9 +45,12 @@ export function getStaffUserIds(env: Env): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
   
-  // Always include KASH_USER_ID in staff list
-  if (env.KASH_USER_ID && !staffIds.includes(env.KASH_USER_ID)) {
-    staffIds.push(env.KASH_USER_ID);
+  // Always include KASH_USER_ID, ISAAC_USER_ID, and RYAN_USER_ID in staff list
+  const adminUserIds = [env.KASH_USER_ID, env.ISAAC_USER_ID, env.RYAN_USER_ID];
+  for (const userId of adminUserIds) {
+    if (userId && !staffIds.includes(userId)) {
+      staffIds.push(userId);
+    }
   }
   
   return staffIds;
