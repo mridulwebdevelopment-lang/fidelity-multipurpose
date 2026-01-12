@@ -172,15 +172,24 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
     return;
   }
 
-  const channel = await client.channels.fetch(env.FUNDING_CHANNEL_ID);
-  if (!channel || !channel.isTextBased()) {
+  // Get the uploaded image attachment
+  const attachment = interaction.options.getAttachment('image', true);
+  if (!attachment) {
     await interaction.reply({
-      content: '❌ Funding channel not found / not text-based. Check `FUNDING_CHANNEL_ID`.',
+      content: '❌ Please upload an image attachment with the `/update` command.',
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
-  const textChannel = channel as TextChannel;
+
+  // Validate it's an image
+  if (!isImageAttachment(attachment)) {
+    await interaction.reply({
+      content: '❌ The attachment must be an image (PNG, JPG, GIF, or WebP).',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
 
   const options: FundingRecalcOptions = {
     endDate: interaction.options.getString('end_date'),
@@ -207,14 +216,6 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
     (existing?.endDate && isValidIsoDate(existing.endDate) ? existing.endDate : null) ||
     (env.FUNDING_END_DATE && isValidIsoDate(env.FUNDING_END_DATE) ? env.FUNDING_END_DATE : null);
 
-  const found = await findLatestImageMessage(textChannel);
-  if (!found) {
-    await interaction.editReply(
-      `❌ No recent image found in <#${env.FUNDING_CHANNEL_ID}>. Upload the table image there first.`,
-    );
-    return;
-  }
-
   // Apply manual adjustment updates
   let manualAdjustmentPence = existing?.manualAdjustmentPence ?? 0;
   if (options.resetAdjustment) manualAdjustmentPence = 0;
@@ -222,12 +223,13 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
   if (options.removeAmount !== null && options.removeAmount !== undefined)
     manualAdjustmentPence += poundsToPence(options.removeAmount);
 
-  // OCR and parse
-  const buffer = await fetchBuffer(found.imageUrl);
+  // OCR and parse the uploaded image
+  const buffer = await fetchBuffer(attachment.url);
   const ocr = await recognizeImage(buffer);
   const parsed = extractNeededValuesFromWords(ocr.words);
 
-  // Persist state
+  // Persist state (use a placeholder message ID since we're not storing the message)
+  const placeholderMessageId = `update-${Date.now()}`;
   await prisma.fundingState.upsert({
     where: { guildId: interaction.guild.id },
     create: {
@@ -235,8 +237,8 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
       channelId: env.FUNDING_CHANNEL_ID,
       endDate: currentEndDate,
       manualAdjustmentPence,
-      lastImageMessageId: found.messageId,
-      lastImageUrl: found.imageUrl,
+      lastImageMessageId: placeholderMessageId,
+      lastImageUrl: attachment.url,
       lastOcrText: ocr.text,
       lastParsedNeededValues: parsed.neededPenceValues,
       lastParsedTotalPence: parsed.totalPence,
@@ -245,8 +247,8 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
       channelId: env.FUNDING_CHANNEL_ID,
       endDate: currentEndDate,
       manualAdjustmentPence,
-      lastImageMessageId: found.messageId,
-      lastImageUrl: found.imageUrl,
+      lastImageMessageId: placeholderMessageId,
+      lastImageUrl: attachment.url,
       lastOcrText: ocr.text,
       lastParsedNeededValues: parsed.neededPenceValues,
       lastParsedTotalPence: parsed.totalPence,
@@ -329,13 +331,31 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
     });
   }
 
+  const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 12);
+  const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
+    {
+      name: '📊 Parsed rows (top 12)',
+      value: preview.text || '*No rows found*',
+      inline: false,
+    },
+    ...fields,
+  ];
+
+  if (preview.flaggedCount > 0) {
+    fieldsWithPreview.splice(1, 0, {
+      name: '⚠️ Low confidence rows',
+      value: `**${preview.flaggedCount}** row(s) have low OCR confidence. Review carefully.`,
+      inline: false,
+    });
+  }
+
   await interaction.editReply({
     embeds: [
       {
-        title: 'Funding targets (recalculated)',
-        description: `Parsed **${parsed.rows.length}** rows from the latest table image in <#${env.FUNDING_CHANNEL_ID}>.`,
+        title: '💰 Funding targets (recalculated)',
+        description: `Parsed **${parsed.rows.length}** rows from uploaded table image (${parsed.neededPenceValues.length} with values).`,
         color: 0x5865f2,
-        fields,
+        fields: fieldsWithPreview,
         footer: { text: 'Morning 03:00–11:00 • Day 11:00–19:00 • Night 19:00–03:00 (UK time)' },
         timestamp: new Date().toISOString(),
       },
