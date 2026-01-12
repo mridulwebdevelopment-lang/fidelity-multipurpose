@@ -448,6 +448,101 @@ export const prisma = {
       return { id: query.where.id };
     },
   },
+  fundingState: {
+    findUnique: async (query: { where: { guildId: string } }) => {
+      const { data, error } = await getSupabase()
+        .from('funding_states')
+        .select('*')
+        .eq('guild_id', query.where.guildId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      return {
+        guildId: data.guild_id,
+        channelId: data.channel_id,
+        endDate: data.end_date,
+        manualAdjustmentPence: Number(data.manual_adjustment_pence ?? 0),
+        lastImageMessageId: data.last_image_message_id ?? null,
+        lastImageUrl: data.last_image_url ?? null,
+        lastOcrText: data.last_ocr_text ?? null,
+        lastParsedNeededValues: data.last_parsed_needed_values ?? null,
+        lastParsedTotalPence: data.last_parsed_total_pence !== null && data.last_parsed_total_pence !== undefined
+          ? Number(data.last_parsed_total_pence)
+          : null,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+    upsert: async (query: { where: { guildId: string }; create: any; update: any }) => {
+      const guildId = query.where.guildId;
+      const now = new Date().toISOString();
+      const payload: any = {
+        guild_id: guildId,
+        channel_id: query.update?.channelId ?? query.create?.channelId,
+        end_date: query.update?.endDate ?? query.create?.endDate ?? null,
+        manual_adjustment_pence:
+          query.update?.manualAdjustmentPence ?? query.create?.manualAdjustmentPence ?? 0,
+        last_image_message_id:
+          query.update?.lastImageMessageId ?? query.create?.lastImageMessageId ?? null,
+        last_image_url: query.update?.lastImageUrl ?? query.create?.lastImageUrl ?? null,
+        last_ocr_text: query.update?.lastOcrText ?? query.create?.lastOcrText ?? null,
+        last_parsed_needed_values:
+          query.update?.lastParsedNeededValues ?? query.create?.lastParsedNeededValues ?? null,
+        last_parsed_total_pence:
+          query.update?.lastParsedTotalPence ?? query.create?.lastParsedTotalPence ?? null,
+        updated_at: now,
+      };
+
+      // created_at should only be set on insert; Supabase upsert will overwrite if provided, so omit it.
+      const { data, error } = await getSupabase()
+        .from('funding_states')
+        .upsert(payload, { onConflict: 'guild_id' })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        guildId: data.guild_id,
+        channelId: data.channel_id,
+        endDate: data.end_date,
+        manualAdjustmentPence: Number(data.manual_adjustment_pence ?? 0),
+        lastImageMessageId: data.last_image_message_id ?? null,
+        lastImageUrl: data.last_image_url ?? null,
+        lastOcrText: data.last_ocr_text ?? null,
+        lastParsedNeededValues: data.last_parsed_needed_values ?? null,
+        lastParsedTotalPence: data.last_parsed_total_pence !== null && data.last_parsed_total_pence !== undefined
+          ? Number(data.last_parsed_total_pence)
+          : null,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+    update: async (query: { where: { guildId: string }; data: any }) => {
+      const updates: any = { updated_at: new Date().toISOString() };
+      if (query.data.channelId !== undefined) updates.channel_id = query.data.channelId;
+      if (query.data.endDate !== undefined) updates.end_date = query.data.endDate;
+      if (query.data.manualAdjustmentPence !== undefined)
+        updates.manual_adjustment_pence = query.data.manualAdjustmentPence;
+      if (query.data.lastImageMessageId !== undefined)
+        updates.last_image_message_id = query.data.lastImageMessageId;
+      if (query.data.lastImageUrl !== undefined) updates.last_image_url = query.data.lastImageUrl;
+      if (query.data.lastOcrText !== undefined) updates.last_ocr_text = query.data.lastOcrText;
+      if (query.data.lastParsedNeededValues !== undefined)
+        updates.last_parsed_needed_values = query.data.lastParsedNeededValues;
+      if (query.data.lastParsedTotalPence !== undefined)
+        updates.last_parsed_total_pence = query.data.lastParsedTotalPence;
+
+      const { error } = await getSupabase()
+        .from('funding_states')
+        .update(updates)
+        .eq('guild_id', query.where.guildId);
+      if (error) throw error;
+      return { guildId: query.where.guildId };
+    },
+  },
 };
 
 // Test database connection on startup

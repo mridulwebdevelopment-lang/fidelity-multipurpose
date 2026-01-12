@@ -42,6 +42,11 @@ Full path: `multipurpose-bot/bot/.env`
    STAFF_USER_IDS=user_id_1,user_id_2,user_id_3
    STAFF_ROLE_IDS=role_id_1,role_id_2  # optional
 
+   # Funding Target Tracker (NEW - Optional)
+   # Set FUNDING_CHANNEL_ID to enable the table OCR + daily/shift target feature
+   FUNDING_CHANNEL_ID=your_funding_channel_id  # optional: leave empty to disable
+   # FUNDING_END_DATE is NOT required - you can set it via /update command instead
+
   # Optional (legacy shift settings)
   # NOTE: Shift commands are currently disabled in code, so these are unused unless you re-enable that feature.
   CHATTER_USER_IDS=

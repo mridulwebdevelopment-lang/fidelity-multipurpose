@@ -17,6 +17,7 @@ import { startShift } from './shifts.js';
 import { endShift } from './shifts.js';
 import { handleShiftMessage } from './shifts.js';
 import { startShiftMonitor } from './shiftMonitor.js';
+import { handleFundingChannelMessage, handleUpdateFundingCommand } from './funding/index.js';
 
 const env = getEnv();
 
@@ -56,6 +57,7 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.MessageCreate, async (message) => {
   await handleTaskChannelMessage(message);
   await handleShiftMessage(client, message);
+  await handleFundingChannelMessage(message);
 });
 
 // Task templates for quick assignment
@@ -121,6 +123,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
       console.log(`Command received: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
+
+      if (interaction.commandName === 'update') {
+        await handleUpdateFundingCommand(client, interaction);
+        return;
+      }
       
       if (interaction.commandName === 'startshift') {
         // Ensure command is used in a server (not DMs)

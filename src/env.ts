@@ -17,6 +17,11 @@ const schema = z.object({
   RYAN_USER_ID: z.string().min(1),
   ISAAC_USER_ID: z.string().min(1),
 
+  // Funding target tracker (table OCR -> daily/shift targets). Optional: feature is disabled unless channel is set.
+  FUNDING_CHANNEL_ID: z.string().optional().default(''),
+  // Expected format: YYYY-MM-DD (UK date). If omitted, /update must be passed end_date or days_left.
+  FUNDING_END_DATE: z.string().optional().default(''),
+
   // Shift check-in flow (all optional with sane defaults)
   CHATTER_USER_IDS: z.string().optional().default(''),
   SHIFT_CHANNEL_ID: z.string().optional().default('1457741396218745028'), // Legacy shift check-in channel (unused unless shift features are enabled)

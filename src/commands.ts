@@ -126,7 +126,41 @@ export const endShiftCommand = new SlashCommandBuilder()
   .setDescription('End your shift (logs timestamp)')
   .setDMPermission(false); // Only works in servers, not DMs
 
-export const ALL_COMMANDS = [taskAssignCommand, startShiftCommand, endShiftCommand].map((c) => c.toJSON());
+export const updateFundingCommand = new SlashCommandBuilder()
+  .setName('update')
+  .setDescription('Reprocess the latest funding table image and recalculate daily + per-shift targets')
+  .addStringOption((opt) =>
+    opt
+      .setName('end_date')
+      .setDescription('Campaign end date (UK) in YYYY-MM-DD')
+      .setMaxLength(10),
+  )
+  .addIntegerOption((opt) =>
+    opt
+      .setName('days_left')
+      .setDescription('Override days left (integer). If set, takes precedence over end_date.')
+      .setMinValue(1),
+  )
+  .addNumberOption((opt) =>
+    opt
+      .setName('add')
+      .setDescription('Money added (reduces remaining needed). Example: 25.50')
+      .setMinValue(0),
+  )
+  .addNumberOption((opt) =>
+    opt
+      .setName('remove')
+      .setDescription('Money removed (increases remaining needed). Example: 10')
+      .setMinValue(0),
+  )
+  .addBooleanOption((opt) =>
+    opt.setName('reset_adjustment').setDescription('If true, clears any previous add/remove adjustments.'),
+  )
+  .setDMPermission(false);
+
+export const ALL_COMMANDS = [taskAssignCommand, startShiftCommand, endShiftCommand, updateFundingCommand].map((c) =>
+  c.toJSON(),
+);
 
 export function isChatInput(i: any): i is ChatInputCommandInteraction {
   return Boolean(i && i.isChatInputCommand?.());
