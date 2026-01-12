@@ -323,15 +323,6 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
   }
 
   const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 12);
-  if (preview.text) {
-    fields.push({
-      name: 'Top rows (from latest table)',
-      value: preview.text.length > 1024 ? preview.text.slice(0, 1021) + '…' : preview.text,
-      inline: false,
-    });
-  }
-
-  const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 12);
   const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
     {
       name: '📊 Parsed rows (top 12)',
