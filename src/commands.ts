@@ -7,7 +7,6 @@ import {
 export const taskAssignCommand = new SlashCommandBuilder()
   .setName('task')
   .setDescription('Task management commands')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
   .addSubcommand((sub) =>
     sub
       .setName('assign')
