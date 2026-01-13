@@ -17,7 +17,7 @@ import { startShift } from './shifts.js';
 import { endShift } from './shifts.js';
 import { handleShiftMessage } from './shifts.js';
 import { startShiftMonitor } from './shiftMonitor.js';
-import { handleFundingChannelMessage, handleUpdateFundingCommand } from './funding/index.js';
+import { handleFundingChannelMessage, handleUpdateFundingCommand, handleUpdateTextCommand } from './funding/index.js';
 
 const env = getEnv();
 
@@ -58,6 +58,7 @@ client.on(Events.MessageCreate, async (message) => {
   await handleTaskChannelMessage(message);
   await handleShiftMessage(client, message);
   await handleFundingChannelMessage(message);
+  await handleUpdateTextCommand(client, message);
 });
 
 // Task templates for quick assignment

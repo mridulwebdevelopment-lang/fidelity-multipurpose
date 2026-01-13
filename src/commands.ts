@@ -128,7 +128,13 @@ export const endShiftCommand = new SlashCommandBuilder()
 
 export const updateFundingCommand = new SlashCommandBuilder()
   .setName('update')
-  .setDescription('Reprocess the latest funding table image and recalculate daily + per-shift targets')
+  .setDescription('Upload funding table image and recalculate daily + per-shift targets')
+  .addAttachmentOption((opt) =>
+    opt
+      .setName('image')
+      .setDescription('Upload the funding table image (required)')
+      .setRequired(true),
+  )
   .addStringOption((opt) =>
     opt
       .setName('end_date')
