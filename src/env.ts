@@ -16,6 +16,7 @@ const schema = z.object({
   KASH_USER_ID: z.string().min(1),
   RYAN_USER_ID: z.string().min(1),
   ISAAC_USER_ID: z.string().min(1),
+  NOAH_USER_ID: z.string().min(1),
 
   // Funding target tracker (table OCR -> daily/shift targets). Optional: feature is disabled unless channel is set.
   FUNDING_CHANNEL_ID: z.string().optional().default(''),
@@ -50,8 +51,8 @@ export function getStaffUserIds(env: Env): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
   
-  // Always include KASH_USER_ID, ISAAC_USER_ID, and RYAN_USER_ID in staff list
-  const adminUserIds = [env.KASH_USER_ID, env.ISAAC_USER_ID, env.RYAN_USER_ID];
+  // Always include KASH_USER_ID, ISAAC_USER_ID, RYAN_USER_ID, and NOAH_USER_ID in staff list
+  const adminUserIds = [env.KASH_USER_ID, env.ISAAC_USER_ID, env.RYAN_USER_ID, env.NOAH_USER_ID];
   for (const userId of adminUserIds) {
     if (userId && !staffIds.includes(userId)) {
       staffIds.push(userId);
