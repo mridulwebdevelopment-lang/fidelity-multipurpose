@@ -278,14 +278,9 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
       ? options.daysLeftOverride
       : currentEndDate
         ? Math.max(1, daysBetweenIsoInclusive(shiftInfo.shiftDayIsoDate, currentEndDate))
-        : null;
+        : 30; // Default to 30 days if no end date is provided
 
-  if (!daysLeft) {
-    await interaction.editReply(
-      '❌ Missing end date. Provide `end_date: YYYY-MM-DD` or `days_left`, or set `FUNDING_END_DATE` in env.',
-    );
-    return;
-  }
+  // Note: daysLeft will always be a number now (minimum 1 or default 30)
 
   const dailyTargetPence = Math.ceil(remainingTotalPence / daysLeft);
   const remainingShifts = shiftInfo.remainingShiftsToday;
@@ -304,7 +299,9 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
     },
     {
       name: 'Days left',
-      value: currentEndDate ? `**${daysLeft}** (until **${currentEndDate}**)` : `**${daysLeft}**`,
+      value: currentEndDate 
+        ? `**${daysLeft}** (until **${currentEndDate}**)` 
+        : `**${daysLeft}** (default, no end date set)`,
       inline: true,
     },
     {
@@ -479,15 +476,9 @@ export async function handleUpdateTextCommand(client: Client, message: Message) 
         ? options.daysLeftOverride
         : currentEndDate
           ? Math.max(1, daysBetweenIsoInclusive(shiftInfo.shiftDayIsoDate, currentEndDate))
-          : null;
+          : 30; // Default to 30 days if no end date is provided
 
-    if (!daysLeft) {
-      await ack.edit({
-        content:
-          '❌ Missing end date. Add `end_date:YYYY-MM-DD` or `days_left:30` to your command, or set `FUNDING_END_DATE` in env.',
-      });
-      return;
-    }
+    // Note: daysLeft will always be a number now (minimum 1 or default 30)
 
     const dailyTargetPence = Math.ceil(remainingTotalPence / daysLeft);
     const remainingShifts = shiftInfo.remainingShiftsToday;
@@ -508,7 +499,9 @@ export async function handleUpdateTextCommand(client: Client, message: Message) 
       },
       {
         name: 'Days left',
-        value: currentEndDate ? `**${daysLeft}** (until **${currentEndDate}**)` : `**${daysLeft}**`,
+        value: currentEndDate 
+          ? `**${daysLeft}** (until **${currentEndDate}**)` 
+          : `**${daysLeft}** (default, no end date set)`,
         inline: true,
       },
       {
