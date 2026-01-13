@@ -4,7 +4,8 @@ import type { OcrWord } from './ocr.js';
 type BBox = { x0: number; y0: number; x1: number; y1: number };
 
 function normalizeToken(s: string): string {
-  return s.trim().toLowerCase().replace(/[^a-z0-9£$.,]/g, '');
+  // More lenient normalization - keep more characters that might be in headers
+  return s.trim().toLowerCase().replace(/[^a-z0-9£$.,\s]/g, '');
 }
 
 function centerX(b: BBox): number {
@@ -13,11 +14,21 @@ function centerX(b: BBox): number {
 
 function isLikelyNeededHeader(w: OcrWord): boolean {
   const t = normalizeToken(w.text);
-  // Match "Needed", "Need", with or without currency symbols
-  return t === 'needed' || t === 'need' || t === 'need$' || t === 'needed$' || t === 'need£' || t === 'needed£';
+  // More flexible matching for "Needed" header - handle OCR variations
+  const normalized = t.replace(/\s+/g, ''); // Remove spaces
+  return (
+    normalized === 'needed' || 
+    normalized === 'need' || 
+    normalized.includes('needed') || 
+    normalized.includes('need') ||
+    // Handle common OCR mistakes
+    normalized === 'needed' || // double 'd'
+    normalized.startsWith('need') && normalized.length <= 7 // "need" with possible OCR errors
+  );
 }
 
-function clusterByLine(words: OcrWord[], yTolerance = 12): OcrWord[][] {
+function clusterByLine(words: OcrWord[], yTolerance = 15): OcrWord[][] {
+  // Increased yTolerance to handle slightly misaligned rows
   const sorted = [...words].sort((a, b) => a.bbox.y0 - b.bbox.y0);
   const lines: OcrWord[][] = [];
   for (const w of sorted) {
@@ -27,7 +38,8 @@ function clusterByLine(words: OcrWord[], yTolerance = 12): OcrWord[][] {
       lines.push([w]);
       continue;
     }
-    const lastY = last[0]?.bbox.y0 ?? y;
+    // Use average Y position of line for better clustering
+    const lastY = last.reduce((sum, word) => sum + word.bbox.y0, 0) / last.length;
     if (Math.abs(y - lastY) <= yTolerance) last.push(w);
     else lines.push([w]);
   }
@@ -60,10 +72,10 @@ export function extractNeededValuesFromWords(words: OcrWord[]): NeededParseResul
   }
 
   const headerWidth = Math.max(10, header.bbox.x1 - header.bbox.x0);
-  const pad = Math.round(headerWidth * 0.9);
+  const pad = Math.round(headerWidth * 1.2); // Increased padding to catch slightly misaligned values
   const colX0 = Math.min(header.bbox.x0, header.bbox.x1) - pad;
   const colX1 = Math.max(header.bbox.x0, header.bbox.x1) + pad;
-  const minY = header.bbox.y1 + 6;
+  const minY = header.bbox.y1 + 4; // Reduced gap to catch rows closer to header
 
   // Consider words in rows below the header.
   const belowHeader = words.filter((w) => w.text && w.text.trim() && w.bbox.y0 >= minY);
@@ -73,35 +85,63 @@ export function extractNeededValuesFromWords(words: OcrWord[]): NeededParseResul
 
   for (const line of allLines) {
     // Name is everything to the left of the needed column for that row.
+    // More lenient filtering to catch names that might be slightly overlapping
     const nameWords = line
-      .filter((w) => w.bbox.x1 < colX0 - 6)
+      .filter((w) => centerX(w.bbox) < colX0 - 3) // Use centerX for better alignment
       .map((w) => w.text.trim())
       .filter(Boolean);
     const name = nameWords.join(' ').replace(/\s+/g, ' ').trim();
     
     // Skip rows with no name (likely not a data row)
-    if (!name) continue;
+    // But allow rows with just numbers/currency in name position (might be misread)
+    if (!name || name.length < 1) continue;
 
+    // Look for money values in the needed column area, with more lenient matching
     const neededWords = line.filter((w) => {
       const cx = centerX(w.bbox);
       return cx >= colX0 && cx <= colX1;
     });
 
-    // Parse needed value: try joined needed-words, else scan right-to-left.
+    // Also check words slightly to the right of the column (in case of misalignment)
+    const rightWords = line.filter((w) => {
+      const cx = centerX(w.bbox);
+      return cx > colX1 && cx <= colX1 + 50; // Allow 50px to the right
+    });
+    
+    // Combine both sets, prioritizing column words
+    const allNeededWords = [...neededWords, ...rightWords];
+
+    // Parse needed value: try multiple strategies
     let neededPence: number | null = null;
-    if (neededWords.length > 0) {
-      const neededJoined = neededWords.map((w) => w.text).join(' ');
+    if (allNeededWords.length > 0) {
+      // Strategy 1: Join all words in the column
+      const neededJoined = allNeededWords.map((w) => w.text).join(' ');
       neededPence = parseMoneyToPence(neededJoined);
+      
+      // Strategy 2: Try each word individually (right-to-left, as money is usually right-aligned)
       if (neededPence === null) {
-        for (let i = neededWords.length - 1; i >= 0; i--) {
-          const v = parseMoneyToPence(neededWords[i]?.text ?? '');
+        for (let i = allNeededWords.length - 1; i >= 0; i--) {
+          const v = parseMoneyToPence(allNeededWords[i]?.text ?? '');
           if (v !== null) {
             neededPence = v;
             break;
           }
         }
       }
+      
+      // Strategy 3: Try joining just the last few words (often the currency symbol and number are separate)
+      if (neededPence === null && allNeededWords.length >= 2) {
+        const lastTwo = allNeededWords.slice(-2).map((w) => w.text).join(' ');
+        neededPence = parseMoneyToPence(lastTwo);
+      }
     }
+    
+    // Strategy 4: If still nothing, check the entire line for any money value
+    if (neededPence === null) {
+      const wholeLine = line.map((w) => w.text).join(' ');
+      neededPence = parseMoneyToPence(wholeLine);
+    }
+    
     // If no needed value found, neededPence stays null (will show as "-")
 
     // Calculate confidence: use needed words if present, else use name words

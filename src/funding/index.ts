@@ -51,7 +51,7 @@ function isValidIsoDate(iso: string): boolean {
 function renderRowsForEmbed(
   rows: { name: string; neededPence: number | null; confidence: number }[],
   currencySymbol: string,
-  maxLines = 20,
+  maxLines = 999, // Show all rows by default (Discord embed limit is ~6000 chars)
 ): { text: string; flaggedCount: number } {
   // Sort: rows with values first (by value desc), then rows without values
   const sorted = [...rows].sort((a, b) => {
@@ -63,16 +63,31 @@ function renderRowsForEmbed(
   let flaggedCount = 0;
 
   const lines: string[] = [];
-  for (const r of sorted.slice(0, maxLines)) {
+  // Show all rows, but respect Discord's ~6000 character limit per field
+  const MAX_FIELD_LENGTH = 5500; // Leave some buffer
+  let currentLength = 0;
+  
+  for (const r of sorted) {
     const lowConf = r.confidence < 60;
     if (lowConf) flaggedCount++;
     const flag = lowConf ? '⚠️ ' : '';
-    const name = r.name.length > 28 ? r.name.slice(0, 27) + '…' : r.name;
+    const name = r.name.length > 35 ? r.name.slice(0, 34) + '…' : r.name;
     const valueStr = r.neededPence === null ? '**—**' : formatPence(r.neededPence, currencySymbol);
-    lines.push(`${flag}**${name}** — ${valueStr}${r.neededPence !== null ? ` (conf ${r.confidence}%)` : ''}`);
+    const line = `${flag}**${name}** — ${valueStr}${r.neededPence !== null ? ` (conf ${r.confidence}%)` : ''}`;
+    
+    // Check if adding this line would exceed the limit
+    if (currentLength + line.length + 1 > MAX_FIELD_LENGTH && lines.length > 0) {
+      const remaining = sorted.length - lines.length;
+      if (remaining > 0) {
+        lines.push(`\n…and **${remaining}** more rows (truncated due to Discord limits)`);
+      }
+      break;
+    }
+    
+    lines.push(line);
+    currentLength += line.length + 1; // +1 for newline
   }
-  const remaining = sorted.length - Math.min(sorted.length, maxLines);
-  if (remaining > 0) lines.push(`…and **${remaining}** more`);
+  
   return { text: lines.join('\n'), flaggedCount };
 }
 
@@ -95,7 +110,7 @@ export async function handleFundingChannelMessage(message: Message) {
     const buffer = await fetchBuffer(image.url);
     const ocr = await recognizeImage(buffer);
     const parsed = extractNeededValuesFromWords(ocr.words);
-    const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 15);
+    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
 
     await prisma.fundingState.upsert({
       where: { guildId: message.guild.id },
@@ -322,13 +337,13 @@ export async function handleUpdateFundingCommand(client: Client, interaction: Ch
     });
   }
 
-  const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 12);
-  const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
-    {
-      name: '📊 Parsed rows (top 12)',
-      value: preview.text || '*No rows found*',
-      inline: false,
-    },
+    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
+    const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
+      {
+        name: `📊 Parsed rows (${parsed.rows.length} total)`,
+        value: preview.text || '*No rows found*',
+        inline: false,
+      },
     ...fields,
   ];
 
@@ -526,10 +541,10 @@ export async function handleUpdateTextCommand(client: Client, message: Message) 
       });
     }
 
-    const preview = renderRowsForEmbed(parsed.rows, currencySymbol, 12);
+    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
     const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
       {
-        name: '📊 Parsed rows (top 12)',
+        name: `📊 Parsed rows (${parsed.rows.length} total)`,
         value: preview.text || '*No rows found*',
         inline: false,
       },

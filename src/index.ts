@@ -18,6 +18,7 @@ import { endShift } from './shifts.js';
 import { handleShiftMessage } from './shifts.js';
 import { startShiftMonitor } from './shiftMonitor.js';
 import { handleFundingChannelMessage, handleUpdateFundingCommand, handleUpdateTextCommand } from './funding/index.js';
+import { addDaysIso, getUkNow } from './funding/ukTime.js';
 
 const env = getEnv();
 
@@ -124,6 +125,83 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
       console.log(`Command received: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
+
+      if (interaction.commandName === 'rota') {
+        // Ensure command is used in a server (not DMs)
+        if (!interaction.guild) {
+          await interaction.reply({
+            content: '❌ This command can only be used in a server, not in DMs.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        try {
+          const ukNow = getUkNow();
+          const weekStartDate = getWeekStartMondayIso(ukNow.isoDate);
+          const weekEndDate = addDaysIso(weekStartDate, 6);
+
+          const allWeekWorking = interaction.options.getBoolean('all_week_working');
+          const holidayDay = interaction.options.getString('holiday_day'); // mon..sun
+
+          // If no options are provided, show current saved rota for this week (if any)
+          if (!allWeekWorking && !holidayDay) {
+            const existing = await prisma.rotaWeek.findUnique({
+              where: { userId: interaction.user.id, weekStartDate },
+            });
+
+            if (!existing) {
+              await interaction.editReply({
+                content:
+                  `No rota saved for **${weekStartDate} → ${weekEndDate} (UK week)**.\n\n` +
+                  `Use:\n` +
+                  `- \`/rota all_week_working:true\` (all 7 days working)\n` +
+                  `- or \`/rota holiday_day:<day>\` (1 holiday, rest working)`,
+              });
+              return;
+            }
+
+            await interaction.editReply({
+              content: renderRotaSummary({
+                weekStartDate,
+                weekEndDate,
+                schedule: existing.schedule,
+              }),
+            });
+            return;
+          }
+
+          // Build a 7-day schedule (Mon–Sun) where default = Working
+          const holidayIndex = holidayDay ? dayKeyToIndex(holidayDay) : null;
+          const days = Array.from({ length: 7 }, (_, i) => {
+            const date = addDaysIso(weekStartDate, i);
+            const isHoliday = holidayIndex !== null && i === holidayIndex;
+            return { date, status: isHoliday ? 'holiday' : 'working' };
+          });
+
+          const schedule = { days };
+
+          const saved = await prisma.rotaWeek.upsert({
+            where: { userId: interaction.user.id, weekStartDate },
+            create: { userId: interaction.user.id, weekStartDate, schedule },
+            update: { schedule },
+          });
+
+          await interaction.editReply({
+            content:
+              `✅ Rota saved for **${weekStartDate} → ${weekEndDate} (UK week)**\n\n` +
+              renderRotaSummary({ weekStartDate, weekEndDate, schedule: saved.schedule }),
+          });
+        } catch (error: any) {
+          console.error('Error handling /rota:', error);
+          await interaction.editReply({
+            content: `❌ Failed to save rota: ${error.message || 'Unknown error'}`,
+          });
+        }
+        return;
+      }
 
       if (interaction.commandName === 'update') {
         await handleUpdateFundingCommand(client, interaction);
@@ -611,6 +689,52 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 });
+
+function getIsoWeekday(isoDate: string): number {
+  // Returns 1..7 (Mon..Sun)
+  const [y, m, d] = isoDate.split('-').map((x) => Number(x));
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0..6 (Sun..Sat)
+  return dow === 0 ? 7 : dow;
+}
+
+function getWeekStartMondayIso(isoDate: string): string {
+  const weekday = getIsoWeekday(isoDate); // 1..7
+  return addDaysIso(isoDate, -(weekday - 1));
+}
+
+function dayKeyToIndex(dayKey: string): number | null {
+  const map: Record<string, number> = {
+    mon: 0,
+    tue: 1,
+    wed: 2,
+    thu: 3,
+    fri: 4,
+    sat: 5,
+    sun: 6,
+  };
+  return map[dayKey] ?? null;
+}
+
+function renderRotaSummary(input: {
+  weekStartDate: string;
+  weekEndDate: string;
+  schedule: any;
+}): string {
+  const days = Array.isArray(input.schedule?.days) ? input.schedule.days : [];
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  if (days.length !== 7) {
+    return `Week: **${input.weekStartDate} → ${input.weekEndDate}**\n(Invalid rota format stored. Please re-submit using /rota.)`;
+  }
+
+  const lines = days.map((d: any, i: number) => {
+    const status = String(d?.status || '').toLowerCase() === 'holiday' ? 'Holiday' : 'Working';
+    const date = d?.date ? ` (${d.date})` : '';
+    return `- **${labels[i]}**${date}: ${status}`;
+  });
+
+  return [`Week: **${input.weekStartDate} → ${input.weekEndDate}**`, ...lines].join('\n');
+}
 
 // Handle task button clicks
 async function handleTaskButton(interaction: any, taskId: string, newStatus: TaskStatus) {

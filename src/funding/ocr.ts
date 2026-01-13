@@ -7,11 +7,15 @@ async function getWorker(): Promise<Worker> {
     workerPromise = (async () => {
       const worker = await createWorker('eng');
       
-      // Optimize for table OCR: uniform block of text (PSM 6)
-      // This is best for structured tables with consistent layout
+      // Try multiple PSM modes for better accuracy:
+      // PSM 6 = Uniform block of text (good for tables)
+      // PSM 11 = Sparse text (good for tables with gaps)
+      // PSM 4 = Single column (good for vertical tables)
+      // Using PSM 11 (sparse text) often works better for tables with spacing
       await worker.setParameters({
-        tessedit_pageseg_mode: '6', // Uniform block of text (table mode)
-        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$., ', // Allow digits, letters, $, comma, period, space
+        tessedit_pageseg_mode: '11', // Sparse text - better for tables with gaps/spacing
+        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz$£., ', // Allow digits, letters, $, £, comma, period, space
+        tessedit_ocr_engine_mode: '1', // Neural nets LSTM engine only (best accuracy)
       });
       
       return worker;
@@ -34,14 +38,13 @@ export type OcrResult = {
 export async function recognizeImage(buffer: Buffer): Promise<OcrResult> {
   const worker = await getWorker();
   
-  // Use higher DPI for better accuracy (300 DPI is standard for OCR)
-  // Also enable image preprocessing for better recognition
+  // Process full image with better settings
   const { data } = await worker.recognize(buffer, {
     rectangle: undefined, // Process full image
   });
   
-  // Filter out very low confidence words (likely OCR errors)
-  // Keep words with confidence >= 30 (tesseract default threshold is ~30-40)
+  // Improved word filtering: be more lenient with confidence but filter obvious noise
+  // Lower threshold to 25 to catch more valid text, but filter out single-character noise
   const words: OcrWord[] = (data.words ?? [])
     .map((w: any) => ({
       text: String(w.text ?? '').trim(),
@@ -53,7 +56,21 @@ export async function recognizeImage(buffer: Buffer): Promise<OcrResult> {
         y1: Number(w.bbox?.y1 ?? 0),
       },
     }))
-    .filter((w: OcrWord) => w.text.length > 0 && w.confidence >= 30); // Remove empty and very low confidence
+    .filter((w: OcrWord) => {
+      // Filter out empty text
+      if (w.text.length === 0) return false;
+      
+      // Keep words with reasonable confidence (>= 25)
+      if (w.confidence >= 25) return true;
+      
+      // For low confidence, only keep if it looks like money (contains $, £, or digits)
+      if (w.text.match(/[\d$£]/)) return true;
+      
+      // Filter out single characters with low confidence (likely noise)
+      if (w.text.length === 1 && w.confidence < 40) return false;
+      
+      return false;
+    });
   
   return { text: data.text ?? '', words };
 }

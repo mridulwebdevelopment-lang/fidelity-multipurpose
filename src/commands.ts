@@ -163,9 +163,37 @@ export const updateFundingCommand = new SlashCommandBuilder()
   )
   .setDMPermission(false);
 
-export const ALL_COMMANDS = [taskAssignCommand, startShiftCommand, endShiftCommand, updateFundingCommand].map((c) =>
-  c.toJSON(),
-);
+export const rotaCommand = new SlashCommandBuilder()
+  .setName('rota')
+  .setDescription('Submit or view your rota for the current UK week (Mon–Sun)')
+  .addBooleanOption((opt) =>
+    opt
+      .setName('all_week_working')
+      .setDescription('If true, marks all 7 days this week as Working')
+  )
+  .addStringOption((opt) =>
+    opt
+      .setName('holiday_day')
+      .setDescription('Pick 1 day as Holiday (all other days will be Working)')
+      .addChoices(
+        { name: 'Monday', value: 'mon' },
+        { name: 'Tuesday', value: 'tue' },
+        { name: 'Wednesday', value: 'wed' },
+        { name: 'Thursday', value: 'thu' },
+        { name: 'Friday', value: 'fri' },
+        { name: 'Saturday', value: 'sat' },
+        { name: 'Sunday', value: 'sun' },
+      )
+  )
+  .setDMPermission(false);
+
+export const ALL_COMMANDS = [
+  taskAssignCommand,
+  startShiftCommand,
+  endShiftCommand,
+  updateFundingCommand,
+  rotaCommand,
+].map((c) => c.toJSON());
 
 export function isChatInput(i: any): i is ChatInputCommandInteraction {
   return Boolean(i && i.isChatInputCommand?.());

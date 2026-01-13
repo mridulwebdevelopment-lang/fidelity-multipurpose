@@ -543,6 +543,59 @@ export const prisma = {
       return { guildId: query.where.guildId };
     },
   },
+  rotaWeek: {
+    findUnique: async (query: { where: { userId: string; weekStartDate: string } }) => {
+      const { data, error } = await getSupabase()
+        .from('rota_weeks')
+        .select('*')
+        .eq('user_id', query.where.userId)
+        .eq('week_start_date', query.where.weekStartDate)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        weekStartDate: data.week_start_date,
+        schedule: data.schedule,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+    upsert: async (query: {
+      where: { userId: string; weekStartDate: string };
+      create: { userId: string; weekStartDate: string; schedule: any };
+      update: { schedule: any };
+    }) => {
+      const now = new Date().toISOString();
+
+      const payload: any = {
+        user_id: query.where.userId,
+        week_start_date: query.where.weekStartDate,
+        schedule: query.update?.schedule ?? query.create?.schedule,
+        updated_at: now,
+      };
+
+      const { data, error } = await getSupabase()
+        .from('rota_weeks')
+        .upsert(payload, { onConflict: 'user_id,week_start_date' })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        weekStartDate: data.week_start_date,
+        schedule: data.schedule,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    },
+  },
 };
 
 // Test database connection on startup
