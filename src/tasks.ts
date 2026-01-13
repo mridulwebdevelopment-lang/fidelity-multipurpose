@@ -314,14 +314,23 @@ export async function getOrCreateUserChannel(
   for (const userId of staffUserIds) {
     // Don't add permission overwrite for the task owner (already added above)
     if (userId !== user.id) {
-      permissionOverwrites.push({
-        id: userId,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      });
+      try {
+        // Verify the user is in the guild before adding permission overwrite
+        const staffMember = await guild.members.fetch(userId).catch(() => null);
+        if (staffMember) {
+          permissionOverwrites.push({
+            id: userId,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+            ],
+          });
+        }
+      } catch (error) {
+        // User not in guild, skip them
+        console.warn(`Staff user ${userId} not found in guild, skipping permission overwrite`);
+      }
     }
   }
 
@@ -341,7 +350,9 @@ export async function getOrCreateUserChannel(
         description: 'This is your personal task channel. All tasks assigned to you will be posted here, and you\'ll receive DM notifications as well.',
         color: 0x5865f2,
         thumbnail: {
-          url: user.displayAvatarURL({ size: 128 }) || undefined,
+          url: ('displayAvatarURL' in user && user.displayAvatarURL) 
+            ? user.displayAvatarURL({ size: 128 }) 
+            : ('avatarURL' in user ? user.avatarURL({ size: 128 }) : undefined) || undefined,
         },
         footer: {
           text: 'Task Management System',
