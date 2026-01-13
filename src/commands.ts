@@ -125,44 +125,6 @@ export const endShiftCommand = new SlashCommandBuilder()
   .setDescription('End your shift (logs timestamp)')
   .setDMPermission(false); // Only works in servers, not DMs
 
-export const updateFundingCommand = new SlashCommandBuilder()
-  .setName('update')
-  .setDescription('Upload funding table image and recalculate daily + per-shift targets')
-  .addAttachmentOption((opt) =>
-    opt
-      .setName('image')
-      .setDescription('Upload the funding table image (required)')
-      .setRequired(true),
-  )
-  .addStringOption((opt) =>
-    opt
-      .setName('end_date')
-      .setDescription('Campaign end date (UK) in YYYY-MM-DD')
-      .setMaxLength(10),
-  )
-  .addIntegerOption((opt) =>
-    opt
-      .setName('days_left')
-      .setDescription('Override days left (integer). If set, takes precedence over end_date.')
-      .setMinValue(1),
-  )
-  .addNumberOption((opt) =>
-    opt
-      .setName('add')
-      .setDescription('Money added (reduces remaining needed). Example: 25.50')
-      .setMinValue(0),
-  )
-  .addNumberOption((opt) =>
-    opt
-      .setName('remove')
-      .setDescription('Money removed (increases remaining needed). Example: 10')
-      .setMinValue(0),
-  )
-  .addBooleanOption((opt) =>
-    opt.setName('reset_adjustment').setDescription('If true, clears any previous add/remove adjustments.'),
-  )
-  .setDMPermission(false);
-
 export const rotaCommand = new SlashCommandBuilder()
   .setName('rota')
   .setDescription('Submit or view your rota for the current UK week (Mon–Sun)')
@@ -191,7 +153,6 @@ export const ALL_COMMANDS = [
   taskAssignCommand,
   startShiftCommand,
   endShiftCommand,
-  updateFundingCommand,
   rotaCommand,
 ].map((c) => c.toJSON());
 

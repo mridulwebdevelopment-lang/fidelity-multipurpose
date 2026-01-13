@@ -61,6 +61,82 @@ function toSnakeCase(obj: any): any {
 }
 
 // Prisma-compatible interface
+// Funding Updates History
+export const fundingUpdatesHistory = {
+  create: async (data: {
+    guildId: string;
+    userId: string;
+    commandType: 'slash_command' | 'text_command';
+    messageId?: string | null;
+    imageUrl: string;
+    ocrText?: string | null;
+    parsedRows: Array<{ name: string; neededPence: number | null; confidence: number }>;
+    parsedNeededValues: number[];
+    parsedTotalPence: number;
+    daysLeft: number;
+    endOfWeekDate: string;
+    dailyTargetPence: number;
+    remainingShifts: string[];
+    perShiftPence: number;
+    currentShift: string;
+    shiftDayIsoDate: string;
+    manualAdjustmentPence: number;
+    manualAdjustmentType?: string | null;
+    daysLeftOverride?: number | null;
+    endDateOverride?: string | null;
+    calculatedAt: string; // ISO timestamp
+  }) => {
+    const payload: any = {
+      guild_id: data.guildId,
+      user_id: data.userId,
+      command_type: data.commandType,
+      message_id: data.messageId ?? null,
+      image_url: data.imageUrl,
+      ocr_text: data.ocrText ?? null,
+      parsed_rows: data.parsedRows,
+      parsed_needed_values: data.parsedNeededValues,
+      parsed_total_pence: data.parsedTotalPence,
+      days_left: data.daysLeft,
+      end_of_week_date: data.endOfWeekDate,
+      daily_target_pence: data.dailyTargetPence,
+      remaining_shifts: data.remainingShifts,
+      per_shift_pence: data.perShiftPence,
+      current_shift: data.currentShift,
+      shift_day_iso_date: data.shiftDayIsoDate,
+      manual_adjustment_pence: data.manualAdjustmentPence,
+      manual_adjustment_type: data.manualAdjustmentType ?? null,
+      days_left_override: data.daysLeftOverride ?? null,
+      end_date_override: data.endDateOverride ?? null,
+      calculated_at: data.calculatedAt,
+    };
+
+    console.log('[Funding History DB] Inserting payload:', {
+      guild_id: payload.guild_id,
+      user_id: payload.user_id,
+      parsed_rows_count: Array.isArray(payload.parsed_rows) ? payload.parsed_rows.length : 0,
+      parsed_total_pence: payload.parsed_total_pence,
+    });
+
+    const { data: result, error } = await getSupabase()
+      .from('funding_updates_history')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Funding History DB] Supabase error:', error);
+      console.error('[Funding History DB] Error code:', error.code);
+      console.error('[Funding History DB] Error message:', error.message);
+      console.error('[Funding History DB] Error details:', error.details);
+      console.error('[Funding History DB] Error hint:', error.hint);
+      throw error;
+    }
+
+    console.log('[Funding History DB] Successfully inserted, ID:', result?.id);
+    return result;
+  },
+};
+
 export const prisma = {
   task: {
     findUnique: async (query: { where: { id?: string; channelId?: string }; include?: any }) => {

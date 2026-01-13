@@ -90,6 +90,41 @@ export function daysBetweenIsoInclusive(startIso: string, endIso: string): numbe
   return diffDays + 1;
 }
 
+/**
+ * Calculate the end of the week (Sunday) in UK timezone
+ * Week runs Monday to Sunday, with Sunday as the end
+ */
+export function getEndOfWeekIso(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map((x) => Number(x));
+  
+  // Create a date object and get day of week
+  // JavaScript Date.getDay() returns 0=Sunday, 1=Monday, ..., 6=Saturday
+  // We need to account for UK timezone, so we'll use a date at noon UK time
+  const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T12:00:00+00:00`;
+  const date = new Date(dateStr);
+  
+  // Get UTC day of week (0=Sunday, 1=Monday, etc.)
+  // Since we're using ISO date which is already in a standard format,
+  // we can calculate directly
+  const dayOfWeek = date.getUTCDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+  
+  // Calculate days until Sunday (end of week)
+  // If dayOfWeek is 0 (Sunday), daysUntilSunday = 0 (already at end of week)
+  // If dayOfWeek is 1 (Monday), daysUntilSunday = 6
+  // If dayOfWeek is 6 (Saturday), daysUntilSunday = 1
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  
+  return addDaysIso(isoDate, daysUntilSunday);
+}
+
+/**
+ * Calculate days left until end of week (Sunday) from a given date
+ */
+export function daysUntilEndOfWeek(isoDate: string): number {
+  const endOfWeek = getEndOfWeekIso(isoDate);
+  return daysBetweenIsoInclusive(isoDate, endOfWeek);
+}
+
 
 
 

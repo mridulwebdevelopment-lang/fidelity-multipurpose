@@ -1,11 +1,11 @@
 import type { ChatInputCommandInteraction, Client, Message, TextChannel } from 'discord.js';
 import { MessageFlags } from 'discord.js';
-import { prisma } from '../db/index.js';
+import { prisma, fundingUpdatesHistory } from '../db/index.js';
 import { getEnv, getStaffUserIds } from '../env.js';
 import { extractNeededValuesFromWords } from './parseNeeded.js';
 import { poundsToPence, formatPence } from './money.js';
 import { recognizeImage } from './ocr.js';
-import { daysBetweenIsoInclusive, getUkShiftInfo } from './ukTime.js';
+import { daysBetweenIsoInclusive, getUkShiftInfo, daysUntilEndOfWeek, getEndOfWeekIso } from './ukTime.js';
 
 type FundingRecalcOptions = {
   endDate?: string | null;
@@ -48,10 +48,35 @@ function isValidIsoDate(iso: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso);
 }
 
+function truncateUtf8(input: string, maxBytes: number): string {
+  // Discord embed field value limit is 1024; depending on server internals it can behave like a byte limit.
+  // Enforce by UTF-8 bytes to be safe with punctuation/emoji.
+  if (!input) return input;
+  if (Buffer.byteLength(input, 'utf8') <= maxBytes) return input;
+  let out = input;
+  const ellipsis = '…';
+  // Trim until it fits with an ellipsis suffix.
+  while (out.length > 0 && Buffer.byteLength(out + ellipsis, 'utf8') > maxBytes) {
+    out = out.slice(0, -1);
+  }
+  return out.length > 0 ? out + ellipsis : ellipsis;
+}
+
+function sanitizeEmbedText(input: string, maxBytes = 1000): string {
+  return truncateUtf8(input ?? '', maxBytes);
+}
+
+function sanitizeEmbedFields(fields: { name: string; value: string; inline?: boolean }[], maxBytes = 1000) {
+  for (const f of fields) {
+    // names have their own limits but ours are already short; still sanitize values hard.
+    if (typeof f.value === 'string') f.value = sanitizeEmbedText(f.value, maxBytes);
+  }
+}
+
 function renderRowsForEmbed(
   rows: { name: string; neededPence: number | null; confidence: number }[],
   currencySymbol: string,
-  maxLines = 999, // Show all rows by default (Discord embed limit is ~6000 chars)
+  maxLines = 999, // Show all rows by default (Discord embed limit is 1024 chars per field)
 ): { text: string; flaggedCount: number } {
   // Sort: rows with values first (by value desc), then rows without values
   const sorted = [...rows].sort((a, b) => {
@@ -63,32 +88,38 @@ function renderRowsForEmbed(
   let flaggedCount = 0;
 
   const lines: string[] = [];
-  // Show all rows, but respect Discord's ~6000 character limit per field
-  const MAX_FIELD_LENGTH = 5500; // Leave some buffer
-  let currentLength = 0;
+  // Discord's field value limit is 1024; enforce by bytes to avoid unicode surprises.
+  const MAX_FIELD_BYTES = 900; // leave buffer for truncation marker
+  let currentBytes = 0;
   
   for (const r of sorted) {
     const lowConf = r.confidence < 60;
     if (lowConf) flaggedCount++;
-    const flag = lowConf ? '⚠️ ' : '';
-    const name = r.name.length > 35 ? r.name.slice(0, 34) + '…' : r.name;
-    const valueStr = r.neededPence === null ? '**—**' : formatPence(r.neededPence, currencySymbol);
-    const line = `${flag}**${name}** — ${valueStr}${r.neededPence !== null ? ` (conf ${r.confidence}%)` : ''}`;
+    const flag = lowConf ? '⚠️' : '';
+    // Make names even shorter (12 chars max)
+    const name = r.name.length > 12 ? r.name.slice(0, 11) + '…' : r.name;
+    const valueStr = r.neededPence === null ? '—' : formatPence(r.neededPence, currencySymbol);
+    // Ultra compact format: flag name value (no confidence shown to save space)
+    const line = `${flag} **${name}** ${valueStr}`;
     
     // Check if adding this line would exceed the limit
-    if (currentLength + line.length + 1 > MAX_FIELD_LENGTH && lines.length > 0) {
-      const remaining = sorted.length - lines.length;
-      if (remaining > 0) {
-        lines.push(`\n…and **${remaining}** more rows (truncated due to Discord limits)`);
-      }
+    const lineWithNewline = line + '\n';
+    const lineBytes = Buffer.byteLength(lineWithNewline, 'utf8');
+    if (currentBytes + lineBytes > MAX_FIELD_BYTES && lines.length > 0) {
+      const remaining = Math.max(0, sorted.length - lines.length);
+      const truncMsg = remaining > 0 ? `\n…${remaining} more` : `\n…`;
+      const truncBytes = Buffer.byteLength(truncMsg, 'utf8');
+      if (currentBytes + truncBytes <= 1000) lines.push(truncMsg);
       break;
     }
     
     lines.push(line);
-    currentLength += line.length + 1; // +1 for newline
+    currentBytes += lineBytes;
   }
   
-  return { text: lines.join('\n'), flaggedCount };
+  const result = lines.join('\n');
+  // Hard limit: never exceed 1000 bytes (well under 1024)
+  return { text: sanitizeEmbedText(result, 1000), flaggedCount };
 }
 
 export async function handleFundingChannelMessage(message: Message) {
@@ -136,11 +167,15 @@ export async function handleFundingChannelMessage(message: Message) {
     });
 
     await ack.edit({ content: '✅ Image processed. Sending summary…' }).catch(() => {});
+    
+    // Final safety check: ensure preview text is under 1000 characters (hard limit)
+    const previewText = sanitizeEmbedText(preview.text || 'No rows detected under the "Needed" column.', 1000);
+    
     await sendableChannel.send({
       embeds: [
         {
           title: 'Funding table parsed',
-          description: preview.text || 'No rows detected under the “Needed” column.',
+          description: previewText,
           color: 0x22c55e,
           fields: [
             { name: 'Rows found', value: `**${parsed.rows.length}**`, inline: true },
@@ -160,413 +195,8 @@ export async function handleFundingChannelMessage(message: Message) {
       ],
     });
   } catch (err: any) {
-    await ack.edit({ content: `❌ Failed to process image: ${err?.message || String(err)}` }).catch(() => {});
+    console.error('Failed to process funding channel image:', err);
+    await ack.edit({ content: '❌ Failed to process the image. Please try re-uploading a clearer screenshot (crop tightly to the table).' }).catch(() => {});
   }
 }
-
-export async function handleUpdateFundingCommand(client: Client, interaction: ChatInputCommandInteraction) {
-  const env = getEnv();
-  if (interaction.commandName !== 'update') return;
-  const currencySymbol = '$'; // Always dollar
-
-  if (!interaction.guild) {
-    await interaction.reply({ content: '❌ This command can only be used in a server.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  if (!isStaffUser(interaction.user.id)) {
-    await interaction.reply({ content: '❌ Only staff can use this command.', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  if (!env.FUNDING_CHANNEL_ID) {
-    await interaction.reply({
-      content: '❌ Funding tracker is not configured. Set `FUNDING_CHANNEL_ID` in the bot env.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Get the uploaded image attachment
-  const attachment = interaction.options.getAttachment('image', true);
-  if (!attachment) {
-    await interaction.reply({
-      content: '❌ Please upload an image attachment with the `/update` command.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Validate it's an image
-  if (!isImageAttachment(attachment)) {
-    await interaction.reply({
-      content: '❌ The attachment must be an image (PNG, JPG, GIF, or WebP).',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const options: FundingRecalcOptions = {
-    endDate: interaction.options.getString('end_date'),
-    daysLeftOverride: interaction.options.getInteger('days_left'),
-    addAmount: interaction.options.getNumber('add'),
-    removeAmount: interaction.options.getNumber('remove'),
-    resetAdjustment: interaction.options.getBoolean('reset_adjustment'),
-  };
-
-  if (options.addAmount && options.removeAmount) {
-    await interaction.reply({
-      content: '❌ Use either `add` or `remove`, not both.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  await interaction.deferReply(); // may take a bit (OCR)
-
-  // Load / init state
-  const existing = await prisma.fundingState.findUnique({ where: { guildId: interaction.guild.id } });
-  const currentEndDate =
-    (options.endDate && isValidIsoDate(options.endDate) ? options.endDate : null) ||
-    (existing?.endDate && isValidIsoDate(existing.endDate) ? existing.endDate : null) ||
-    (env.FUNDING_END_DATE && isValidIsoDate(env.FUNDING_END_DATE) ? env.FUNDING_END_DATE : null);
-
-  // Apply manual adjustment updates
-  let manualAdjustmentPence = existing?.manualAdjustmentPence ?? 0;
-  if (options.resetAdjustment) manualAdjustmentPence = 0;
-  if (options.addAmount !== null && options.addAmount !== undefined) manualAdjustmentPence -= poundsToPence(options.addAmount);
-  if (options.removeAmount !== null && options.removeAmount !== undefined)
-    manualAdjustmentPence += poundsToPence(options.removeAmount);
-
-  // OCR and parse the uploaded image
-  const buffer = await fetchBuffer(attachment.url);
-  const ocr = await recognizeImage(buffer);
-  const parsed = extractNeededValuesFromWords(ocr.words);
-
-  // Persist state (use a placeholder message ID since we're not storing the message)
-  const placeholderMessageId = `update-${Date.now()}`;
-  await prisma.fundingState.upsert({
-    where: { guildId: interaction.guild.id },
-    create: {
-      guildId: interaction.guild.id,
-      channelId: env.FUNDING_CHANNEL_ID,
-      endDate: currentEndDate,
-      manualAdjustmentPence,
-      lastImageMessageId: placeholderMessageId,
-      lastImageUrl: attachment.url,
-      lastOcrText: ocr.text,
-      lastParsedNeededValues: parsed.neededPenceValues,
-      lastParsedTotalPence: parsed.totalPence,
-    },
-    update: {
-      channelId: env.FUNDING_CHANNEL_ID,
-      endDate: currentEndDate,
-      manualAdjustmentPence,
-      lastImageMessageId: placeholderMessageId,
-      lastImageUrl: attachment.url,
-      lastOcrText: ocr.text,
-      lastParsedNeededValues: parsed.neededPenceValues,
-      lastParsedTotalPence: parsed.totalPence,
-    },
-  });
-
-  const remainingTotalPence = parsed.totalPence + manualAdjustmentPence;
-
-  const shiftInfo = getUkShiftInfo(new Date());
-  const daysLeft =
-    options.daysLeftOverride && options.daysLeftOverride > 0
-      ? options.daysLeftOverride
-      : currentEndDate
-        ? Math.max(1, daysBetweenIsoInclusive(shiftInfo.shiftDayIsoDate, currentEndDate))
-        : 30; // Default to 30 days if no end date is provided
-
-  // Note: daysLeft will always be a number now (minimum 1 or default 30)
-
-  const dailyTargetPence = Math.ceil(remainingTotalPence / daysLeft);
-  const remainingShifts = shiftInfo.remainingShiftsToday;
-  const perShiftPence = Math.ceil(dailyTargetPence / remainingShifts.length);
-
-  const ukTimeStr = `${String(shiftInfo.ukNow.hour).padStart(2, '0')}:${String(shiftInfo.ukNow.minute).padStart(
-    2,
-    '0',
-  )}:${String(shiftInfo.ukNow.second).padStart(2, '0')}`;
-
-  const fields: { name: string; value: string; inline?: boolean }[] = [
-    {
-      name: 'Total remaining',
-      value: `**${formatPence(remainingTotalPence, currencySymbol)}**`,
-      inline: true,
-    },
-    {
-      name: 'Days left',
-      value: currentEndDate 
-        ? `**${daysLeft}** (until **${currentEndDate}**)` 
-        : `**${daysLeft}** (default, no end date set)`,
-      inline: true,
-    },
-    {
-      name: 'Daily target',
-      value: `**${formatPence(dailyTargetPence, currencySymbol)}** / day`,
-      inline: true,
-    },
-    {
-      name: 'UK time / shift',
-      value: `**${ukTimeStr}** • Current: **${shiftInfo.currentShift}**`,
-      inline: false,
-    },
-    {
-      name: 'Today (remaining shifts only)',
-      value: remainingShifts
-        .map((s, idx) => {
-          const label = idx === 0 ? `**${s} (current)**` : `**${s}**`;
-          return `${label}: ${formatPence(perShiftPence, currencySymbol)}`;
-        })
-        .join('\n'),
-      inline: false,
-    },
-  ];
-
-  if (manualAdjustmentPence !== 0) {
-    fields.splice(1, 0, {
-      name: 'Manual adjustment',
-      value: `**${formatPence(manualAdjustmentPence, currencySymbol)}** (applied to total)`,
-      inline: true,
-    });
-  }
-
-    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
-    const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
-      {
-        name: `📊 Parsed rows (${parsed.rows.length} total)`,
-        value: preview.text || '*No rows found*',
-        inline: false,
-      },
-    ...fields,
-  ];
-
-  if (preview.flaggedCount > 0) {
-    fieldsWithPreview.splice(1, 0, {
-      name: '⚠️ Low confidence rows',
-      value: `**${preview.flaggedCount}** row(s) have low OCR confidence. Review carefully.`,
-      inline: false,
-    });
-  }
-
-  await interaction.editReply({
-    embeds: [
-      {
-        title: '💰 Funding targets (recalculated)',
-        description: `Parsed **${parsed.rows.length}** rows from uploaded table image (${parsed.neededPenceValues.length} with values).`,
-        color: 0x5865f2,
-        fields: fieldsWithPreview,
-        footer: { text: 'Morning 03:00–11:00 • Day 11:00–19:00 • Night 19:00–03:00 (UK time)' },
-        timestamp: new Date().toISOString(),
-      },
-    ],
-  });
-}
-
-export async function handleUpdateTextCommand(client: Client, message: Message) {
-  const env = getEnv();
-  if (!env.FUNDING_CHANNEL_ID) return; // feature disabled
-  
-  if (!message.guild || !message.channel.isTextBased()) return;
-  if (message.author.bot) return;
-  if (!('send' in message.channel)) return;
-  const sendableChannel = message.channel as unknown as { send: (...args: any[]) => Promise<any> };
-
-  const content = message.content.trim().toLowerCase();
-  if (content !== '!update' && content !== '/update') return;
-
-  if (!isStaffUser(message.author.id)) {
-    await sendableChannel.send({ content: '❌ Only staff can use this command.' });
-    return;
-  }
-
-  // Check for image attachment
-  const image = message.attachments.find((a) => isImageAttachment(a));
-  if (!image?.url) {
-    await sendableChannel.send({
-      content: '❌ Please attach an image to your `!update` message. Upload the funding table image as an attachment.',
-    });
-    return;
-  }
-
-  // Parse options from message content (simple parsing for text command)
-  // Format: !update end_date:2024-12-31 days_left:30 add:25.50
-  const options: FundingRecalcOptions = {};
-  const parts = message.content.split(/\s+/).slice(1); // Skip "!update"
-  for (const part of parts) {
-    if (part.startsWith('end_date:')) {
-      options.endDate = part.split(':')[1];
-    } else if (part.startsWith('days_left:')) {
-      const val = parseInt(part.split(':')[1]);
-      if (!isNaN(val)) options.daysLeftOverride = val;
-    } else if (part.startsWith('add:')) {
-      const val = parseFloat(part.split(':')[1]);
-      if (!isNaN(val)) options.addAmount = val;
-    } else if (part.startsWith('remove:')) {
-      const val = parseFloat(part.split(':')[1]);
-      if (!isNaN(val)) options.removeAmount = val;
-    } else if (part === 'reset_adjustment' || part === 'reset') {
-      options.resetAdjustment = true;
-    }
-  }
-
-  if (options.addAmount && options.removeAmount) {
-    await sendableChannel.send({ content: '❌ Use either `add:` or `remove:`, not both.' });
-    return;
-  }
-
-  const ack = await sendableChannel.send({ content: '🧠 Processing table image (OCR)…' });
-
-  try {
-    // Load / init state
-    const existing = await prisma.fundingState.findUnique({ where: { guildId: message.guild.id } });
-    const currentEndDate =
-      (options.endDate && isValidIsoDate(options.endDate) ? options.endDate : null) ||
-      (existing?.endDate && isValidIsoDate(existing.endDate) ? existing.endDate : null) ||
-      (env.FUNDING_END_DATE && isValidIsoDate(env.FUNDING_END_DATE) ? env.FUNDING_END_DATE : null);
-
-    // Apply manual adjustment updates
-    let manualAdjustmentPence = existing?.manualAdjustmentPence ?? 0;
-    if (options.resetAdjustment) manualAdjustmentPence = 0;
-    if (options.addAmount !== null && options.addAmount !== undefined)
-      manualAdjustmentPence -= poundsToPence(options.addAmount);
-    if (options.removeAmount !== null && options.removeAmount !== undefined)
-      manualAdjustmentPence += poundsToPence(options.removeAmount);
-
-    // OCR and parse
-    const buffer = await fetchBuffer(image.url);
-    const ocr = await recognizeImage(buffer);
-    const parsed = extractNeededValuesFromWords(ocr.words);
-
-    // Persist state
-    const placeholderMessageId = `update-${Date.now()}`;
-    await prisma.fundingState.upsert({
-      where: { guildId: message.guild.id },
-      create: {
-        guildId: message.guild.id,
-        channelId: env.FUNDING_CHANNEL_ID,
-        endDate: currentEndDate,
-        manualAdjustmentPence,
-        lastImageMessageId: placeholderMessageId,
-        lastImageUrl: image.url,
-        lastOcrText: ocr.text,
-        lastParsedNeededValues: parsed.neededPenceValues,
-        lastParsedTotalPence: parsed.totalPence,
-      },
-      update: {
-        channelId: env.FUNDING_CHANNEL_ID,
-        endDate: currentEndDate,
-        manualAdjustmentPence,
-        lastImageMessageId: placeholderMessageId,
-        lastImageUrl: image.url,
-        lastOcrText: ocr.text,
-        lastParsedNeededValues: parsed.neededPenceValues,
-        lastParsedTotalPence: parsed.totalPence,
-      },
-    });
-
-    const remainingTotalPence = parsed.totalPence + manualAdjustmentPence;
-
-    const shiftInfo = getUkShiftInfo(new Date());
-    const daysLeft =
-      options.daysLeftOverride && options.daysLeftOverride > 0
-        ? options.daysLeftOverride
-        : currentEndDate
-          ? Math.max(1, daysBetweenIsoInclusive(shiftInfo.shiftDayIsoDate, currentEndDate))
-          : 30; // Default to 30 days if no end date is provided
-
-    // Note: daysLeft will always be a number now (minimum 1 or default 30)
-
-    const dailyTargetPence = Math.ceil(remainingTotalPence / daysLeft);
-    const remainingShifts = shiftInfo.remainingShiftsToday;
-    const perShiftPence = Math.ceil(dailyTargetPence / remainingShifts.length);
-
-    const ukTimeStr = `${String(shiftInfo.ukNow.hour).padStart(2, '0')}:${String(shiftInfo.ukNow.minute).padStart(
-      2,
-      '0',
-    )}:${String(shiftInfo.ukNow.second).padStart(2, '0')}`;
-
-    const currencySymbol = '$';
-
-    const fields: { name: string; value: string; inline?: boolean }[] = [
-      {
-        name: 'Total remaining',
-        value: `**${formatPence(remainingTotalPence, currencySymbol)}**`,
-        inline: true,
-      },
-      {
-        name: 'Days left',
-        value: currentEndDate 
-          ? `**${daysLeft}** (until **${currentEndDate}**)` 
-          : `**${daysLeft}** (default, no end date set)`,
-        inline: true,
-      },
-      {
-        name: 'Daily target',
-        value: `**${formatPence(dailyTargetPence, currencySymbol)}** / day`,
-        inline: true,
-      },
-      {
-        name: 'UK time / shift',
-        value: `**${ukTimeStr}** • Current: **${shiftInfo.currentShift}**`,
-        inline: false,
-      },
-      {
-        name: 'Today (remaining shifts only)',
-        value: remainingShifts
-          .map((s, idx) => {
-            const label = idx === 0 ? `**${s} (current)**` : `**${s}**`;
-            return `${label}: ${formatPence(perShiftPence, currencySymbol)}`;
-          })
-          .join('\n'),
-        inline: false,
-      },
-    ];
-
-    if (manualAdjustmentPence !== 0) {
-      fields.splice(1, 0, {
-        name: 'Manual adjustment',
-        value: `**${formatPence(manualAdjustmentPence, currencySymbol)}** (applied to total)`,
-        inline: true,
-      });
-    }
-
-    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
-    const fieldsWithPreview: { name: string; value: string; inline?: boolean }[] = [
-      {
-        name: `📊 Parsed rows (${parsed.rows.length} total)`,
-        value: preview.text || '*No rows found*',
-        inline: false,
-      },
-      ...fields,
-    ];
-
-    if (preview.flaggedCount > 0) {
-      fieldsWithPreview.splice(1, 0, {
-        name: '⚠️ Low confidence rows',
-        value: `**${preview.flaggedCount}** row(s) have low OCR confidence. Review carefully.`,
-        inline: false,
-      });
-    }
-
-    await ack.edit({
-      embeds: [
-        {
-          title: '💰 Funding targets (recalculated)',
-          description: `Parsed **${parsed.rows.length}** rows from uploaded table image (${parsed.neededPenceValues.length} with values).`,
-          color: 0x5865f2,
-          fields: fieldsWithPreview,
-          footer: { text: 'Morning 03:00–11:00 • Day 11:00–19:00 • Night 19:00–03:00 (UK time)' },
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
-  } catch (err: any) {
-    await ack.edit({ content: `❌ Failed to process: ${err?.message || String(err)}` }).catch(() => {});
-  }
-}
-
 
