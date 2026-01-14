@@ -34,48 +34,57 @@ async function checkAndRemindTasks(client: Client) {
   const remindThreshold = new Date(now.getTime() - REMIND_INTERVAL_HOURS * 60 * 60 * 1000);
 
   for (const task of tasks) {
-    const lastUpdate = task.lastRemindedAt ? new Date(task.lastRemindedAt) : new Date(task.createdAt);
+    // Re-fetch task to ensure status hasn't changed (safety check)
+    const currentTask = await prisma.task.findUnique({ where: { id: task.id } });
+    if (!currentTask) continue;
+    
+    // Skip if task is no longer pending or in_progress (may have been completed/cancelled)
+    if (currentTask.status !== TaskStatus.pending && currentTask.status !== TaskStatus.in_progress) {
+      continue;
+    }
+
+    const lastUpdate = currentTask.lastRemindedAt ? new Date(currentTask.lastRemindedAt) : new Date(currentTask.createdAt);
     const needsReminder = lastUpdate < remindThreshold;
 
     if (needsReminder) {
       // Check if task is overdue
-      const isOverdue = task.deadline && new Date(task.deadline) < now;
+      const isOverdue = currentTask.deadline && new Date(currentTask.deadline) < now;
 
       // Update last reminded time
       await prisma.task.update({
-        where: { id: task.id },
+        where: { id: currentTask.id },
         data: {
           lastRemindedAt: now.toISOString(),
-          escalationCount: task.escalationCount + 1,
+          escalationCount: currentTask.escalationCount + 1,
         },
       });
 
       // Get channel
       try {
-        const channel = await client.channels.fetch(task.channelId);
+        const channel = await client.channels.fetch(currentTask.channelId);
         if (channel && channel.isTextBased()) {
           const textChannel = channel as TextChannel;
           
           // Check if we should escalate
-          if (task.escalationCount + 1 >= ESCALATE_AFTER_REMINDERS) {
-            await escalateTask(client, task, textChannel, isOverdue);
+          if (currentTask.escalationCount + 1 >= ESCALATE_AFTER_REMINDERS) {
+            await escalateTask(client, currentTask, textChannel, isOverdue);
           } else {
-            await remindTask(client, task, textChannel, isOverdue);
+            await remindTask(client, currentTask, textChannel, isOverdue);
           }
         }
       } catch (error) {
-        console.error(`Error fetching channel for task ${task.id}:`, error);
+        console.error(`Error fetching channel for task ${currentTask.id}:`, error);
       }
 
       // Try to send DM
       try {
-        const user = await client.users.fetch(task.assignedToUserId);
+        const user = await client.users.fetch(currentTask.assignedToUserId);
         const dmChannel = await user.createDM();
         await dmChannel.send({
-          content: `⏰ **Task Reminder**\n\nYou have a task that needs attention: **${task.title}**\n\nView in: <#${task.channelId}>${isOverdue ? '\n\n⚠️ **This task is overdue!**' : ''}`,
+          content: `⏰ **Task Reminder**\n\nYou have a task that needs attention: **${currentTask.title}**\n\nView in: <#${currentTask.channelId}>${isOverdue ? '\n\n⚠️ **This task is overdue!**' : ''}`,
         });
       } catch (error) {
-        console.error(`Error sending DM for task ${task.id}:`, error);
+        console.error(`Error sending DM for task ${currentTask.id}:`, error);
       }
     }
   }

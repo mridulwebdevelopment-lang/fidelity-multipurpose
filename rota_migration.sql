@@ -26,3 +26,5 @@ ALTER TABLE rota_weeks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Service role can access all rota_weeks" ON rota_weeks
   FOR ALL USING (true);
 
+
+

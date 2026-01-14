@@ -40,9 +40,23 @@ export async function handleTaskChannelMessage(message: Message) {
 
     if (imageUrl && (task.status === TaskStatus.in_progress || task.status === TaskStatus.pending)) {
       try {
+        // Re-fetch task to ensure it hasn't been completed already (safety check)
+        const currentTask = await prisma.task.findUnique({ where: { id: task.id } });
+        if (!currentTask) {
+          console.log(`Task ${task.id} not found when trying to complete`);
+          return;
+        }
+        
+        // Skip if task is already completed or cancelled
+        if (currentTask.status === TaskStatus.completed || currentTask.status === TaskStatus.cancelled) {
+          console.log(`Task ${task.id} is already ${currentTask.status}, skipping completion`);
+          await message.react('ℹ️');
+          return;
+        }
+        
         // Update task with proof image and mark as completed
         await prisma.task.update({
-          where: { id: task.id },
+          where: { id: currentTask.id },
           data: {
             status: TaskStatus.completed,
             proofImageUrl: imageUrl,
@@ -54,10 +68,10 @@ export async function handleTaskChannelMessage(message: Message) {
 
         // Send completion message in channel with proof
         await message.channel.send({
-          content: `<@${task.assignedToUserId}> ✅ **Task Completed**`,
+          content: `<@${currentTask.assignedToUserId}> ✅ **Task Completed**`,
           embeds: [
             {
-              title: task.title,
+              title: currentTask.title,
               description: 'Task has been marked as completed with proof image.',
               color: 0x22c55e,
               image: {
@@ -78,7 +92,7 @@ export async function handleTaskChannelMessage(message: Message) {
           const taskMessage = messages.find((msg) => {
             // Look for the task message by checking embeds for task ID
             return msg.embeds.some((embed) => 
-              embed.footer?.text?.includes(task.id.slice(0, 8))
+              embed.footer?.text?.includes(currentTask.id.slice(0, 8))
             );
           });
           

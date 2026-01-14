@@ -4,6 +4,7 @@ import {
   GatewayIntentBits,
   MessageFlags,
   Partials,
+  TextChannel,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { prisma, TaskStatus } from './db/index.js';
@@ -453,19 +454,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
               [TaskStatus.cancelled]: '❌',
             }[status];
 
-            await interaction.channel.send({
-              content: `<@${task.assignedToUserId}> ${statusEmoji} **Task Status Updated**`,
-              embeds: [
-                {
-                  title: task.title,
-                  description: `Status changed to: **${status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}**`,
-                  color: status === TaskStatus.completed ? 0x00ff00 : status === TaskStatus.cancelled ? 0xff0000 : 0xff8800,
-                  footer: {
-                    text: `Updated by: ${interaction.user.username}`,
+            if (interaction.channel && interaction.channel.isTextBased() && 'send' in interaction.channel) {
+              await (interaction.channel as TextChannel).send({
+                content: `<@${task.assignedToUserId}> ${statusEmoji} **Task Status Updated**`,
+                embeds: [
+                  {
+                    title: task.title,
+                    description: `Status changed to: **${status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}**`,
+                    color: status === TaskStatus.completed ? 0x00ff00 : status === TaskStatus.cancelled ? 0xff0000 : 0xff8800,
+                    footer: {
+                      text: `Updated by: ${interaction.user.username}`,
+                    },
                   },
-                },
-              ],
-            });
+                ],
+              });
+            }
 
             await interaction.editReply({
               content: `✅ Task status updated to **${status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}**`,
@@ -834,6 +837,23 @@ async function handleTaskCompleteButton(interaction: any, taskId: string) {
     if (!task) {
       await interaction.reply({ 
         content: 'Task not found.', 
+        flags: MessageFlags.Ephemeral 
+      });
+      return;
+    }
+
+    // Check if task is already completed or cancelled
+    if (task.status === TaskStatus.completed) {
+      await interaction.reply({ 
+        content: '✅ This task is already completed.', 
+        flags: MessageFlags.Ephemeral 
+      });
+      return;
+    }
+
+    if (task.status === TaskStatus.cancelled) {
+      await interaction.reply({ 
+        content: '❌ This task has been cancelled.', 
         flags: MessageFlags.Ephemeral 
       });
       return;

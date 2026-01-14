@@ -19,3 +19,5 @@ ALTER TABLE shifts ADD COLUMN IF NOT EXISTS last_periodic_reminder_at TIMESTAMPT
 
 
 
+
+

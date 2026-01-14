@@ -52,3 +52,5 @@ COMMENT ON COLUMN funding_updates_history.parsed_needed_values IS 'Array of all 
 COMMENT ON COLUMN funding_updates_history.calculated_at IS 'The exact timestamp when the calculation was made (upload/command time)';
 COMMENT ON COLUMN funding_updates_history.shift_day_iso_date IS 'The shift day date (shift day starts at 03:00 UK time)';
 
+
+
