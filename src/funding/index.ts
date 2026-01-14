@@ -135,8 +135,6 @@ export async function handleFundingChannelMessage(message: Message) {
   const image = message.attachments.find((a) => isImageAttachment(a));
   if (!image?.url) return;
 
-  // Lightweight UX: acknowledge quickly, then process.
-  const ack = await sendableChannel.send({ content: '🧠 Processing table image (OCR)…' });
   try {
     const buffer = await fetchBuffer(image.url);
     const ocr = await recognizeImage(buffer);
@@ -165,8 +163,6 @@ export async function handleFundingChannelMessage(message: Message) {
         lastParsedTotalPence: parsed.totalPence,
       },
     });
-
-    await ack.edit({ content: '✅ Image processed. Sending summary…' }).catch(() => {});
     
     // Final safety check: ensure preview text is under 1000 characters (hard limit)
     const previewText = sanitizeEmbedText(preview.text || 'No rows detected under the "Needed" column.', 1000);
@@ -196,7 +192,7 @@ export async function handleFundingChannelMessage(message: Message) {
     });
   } catch (err: any) {
     console.error('Failed to process funding channel image:', err);
-    await ack.edit({ content: '❌ Failed to process the image. Please try re-uploading a clearer screenshot (crop tightly to the table).' }).catch(() => {});
+    await sendableChannel.send({ content: '❌ Failed to process the image. Please try re-uploading a clearer screenshot (crop tightly to the table).' }).catch(() => {});
   }
 }
 
