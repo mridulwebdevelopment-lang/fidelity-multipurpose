@@ -154,21 +154,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
             if (!existing) {
               await interaction.editReply({
-                content:
-                  `No rota saved for **${weekStartDate} → ${weekEndDate} (UK week)**.\n\n` +
-                  `Use:\n` +
-                  `- \`/rota all_week_working:true\` (all 7 days working)\n` +
-                  `- or \`/rota holiday_day:<day>\` (1 holiday, rest working)`,
+                embeds: [
+                  {
+                    title: '📋 No Rota Found',
+                    description: `No rota saved for **${weekStartDate} → ${weekEndDate} (UK week)**.`,
+                    fields: [
+                      {
+                        name: 'How to submit your rota:',
+                        value:
+                          `• \`/rota all_week_working:true\` - All 7 days working\n` +
+                          `• \`/rota holiday_day:<day>\` - One holiday, rest working\n\n` +
+                          `**Examples:**\n` +
+                          `\`/rota holiday_day:mon\` - Monday off, rest working\n` +
+                          `\`/rota holiday_day:fri\` - Friday off, rest working`,
+                      },
+                    ],
+                    color: 0xf59e0b,
+                  },
+                ],
               });
               return;
             }
 
             await interaction.editReply({
-              content: renderRotaSummary({
-                weekStartDate,
-                weekEndDate,
-                schedule: existing.schedule,
-              }),
+              embeds: [
+                createRotaEmbed({
+                  weekStartDate,
+                  weekEndDate,
+                  schedule: existing.schedule,
+                  title: '📋 Your Current Rota',
+                  isSaved: false,
+                }),
+              ],
             });
             return;
           }
@@ -190,14 +207,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
 
           await interaction.editReply({
-            content:
-              `✅ Rota saved for **${weekStartDate} → ${weekEndDate} (UK week)**\n\n` +
-              renderRotaSummary({ weekStartDate, weekEndDate, schedule: saved.schedule }),
+            embeds: [
+              createRotaEmbed({
+                weekStartDate,
+                weekEndDate,
+                schedule: saved.schedule,
+                title: '✅ Rota Saved Successfully',
+                isSaved: true,
+              }),
+            ],
           });
         } catch (error: any) {
           console.error('Error handling /rota:', error);
           await interaction.editReply({
-            content: `❌ Failed to save rota: ${error.message || 'Unknown error'}`,
+            embeds: [
+              {
+                title: '❌ Error Saving Rota',
+                description: `Failed to save rota: ${error.message || 'Unknown error'}`,
+                color: 0xef4444,
+              },
+            ],
           });
         }
         return;
@@ -731,6 +760,43 @@ function renderRotaSummary(input: {
   });
 
   return [`Week: **${input.weekStartDate} → ${input.weekEndDate}**`, ...lines].join('\n');
+}
+
+function createRotaEmbed(input: {
+  weekStartDate: string;
+  weekEndDate: string;
+  schedule: any;
+  title?: string;
+  isSaved?: boolean;
+}) {
+  const days = Array.isArray(input.schedule?.days) ? input.schedule.days : [];
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  if (days.length !== 7) {
+    return {
+      title: input.title || '📋 Rota Summary',
+      description: `**Week:** ${input.weekStartDate} → ${input.weekEndDate}\n\n⚠️ Invalid rota format stored. Please re-submit using \`/rota\`.`,
+      color: 0xf59e0b,
+    };
+  }
+
+  const fields = days.map((d: any, i: number) => {
+    const status = String(d?.status || '').toLowerCase() === 'holiday' ? '🏖️ Holiday' : '✅ Working';
+    const date = d?.date || '';
+    return {
+      name: `${labels[i]}${date ? ` (${date})` : ''}`,
+      value: status,
+      inline: true,
+    };
+  });
+
+  return {
+    title: input.title || (input.isSaved ? '✅ Rota Saved' : '📋 Your Rota'),
+    description: `**Week:** ${input.weekStartDate} → ${input.weekEndDate} (UK week)`,
+    fields,
+    color: input.isSaved ? 0x22c55e : 0x3b82f6,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 // Handle task button clicks
