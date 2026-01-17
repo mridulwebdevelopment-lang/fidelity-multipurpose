@@ -113,12 +113,6 @@ export async function assignTask(
             custom_id: `task_complete_${task.id}`,
             label: 'Complete',
           },
-          {
-            type: 2,
-            style: 4, // Danger button
-            custom_id: `task_cancel_${task.id}`,
-            label: 'Cancel',
-          },
         ],
       },
     ],
