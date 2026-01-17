@@ -139,7 +139,6 @@ export async function handleFundingChannelMessage(message: Message) {
     const buffer = await fetchBuffer(image.url);
     const ocr = await recognizeImage(buffer);
     const parsed = extractNeededValuesFromWords(ocr.words);
-    const preview = renderRowsForEmbed(parsed.rows, currencySymbol);
 
     await prisma.fundingState.upsert({
       where: { guildId: message.guild.id },
@@ -164,32 +163,6 @@ export async function handleFundingChannelMessage(message: Message) {
       },
     });
     
-    // Final safety check: ensure preview text is under 1000 characters (hard limit)
-    const previewText = sanitizeEmbedText(preview.text || 'No rows detected under the "Needed" column.', 1000);
-    
-    await sendableChannel.send({
-      embeds: [
-        {
-          title: 'Funding table parsed',
-          description: previewText,
-          color: 0x22c55e,
-          fields: [
-            { name: 'Rows found', value: `**${parsed.rows.length}**`, inline: true },
-            { name: 'Total remaining', value: `**${formatPence(parsed.totalPence, currencySymbol)}**`, inline: true },
-            ...(preview.flaggedCount > 0
-              ? [{ name: 'Flagged (low confidence)', value: `**${preview.flaggedCount}**`, inline: true }]
-              : []),
-          ],
-          footer: {
-            text:
-              preview.flaggedCount > 0
-                ? '⚠️ Some rows had low OCR confidence. Consider re-uploading a clearer screenshot.'
-                : 'Tip: crop tightly around the table for best OCR.',
-          },
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
   } catch (err: any) {
     console.error('Failed to process funding channel image:', err);
     await sendableChannel.send({ content: '❌ Failed to process the image. Please try re-uploading a clearer screenshot (crop tightly to the table).' }).catch(() => {});
